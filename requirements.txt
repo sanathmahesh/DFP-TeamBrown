@@ -1,0 +1,17 @@
+# Web Framework
+streamlit==1.31.0
+
+# Web Scraping
+beautifulsoup4==4.12.3
+requests==2.31.0
+lxml==5.1.0
+
+# Data Processing
+pandas==2.2.0
+
+# Future API Integration
+googlemaps==4.10.0
+uber-rides==0.3.0
+
+# Utilities
+python-dotenv==1.0.1
