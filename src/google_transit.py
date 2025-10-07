@@ -3,10 +3,10 @@ Google Maps Transit API integration.
 Module for fetching public transportation options and comparing with shuttle timings.
 """
 
-import googlemaps
 from datetime import datetime
 from typing import Dict, List, Optional
 import os
+import importlib
 
 
 class GoogleTransitAPI:
@@ -21,11 +21,19 @@ class GoogleTransitAPI:
         """
         self.api_key = api_key or os.getenv('GOOGLE_MAPS_API_KEY')
         self.client = None
+        self.init_error: Optional[str] = None
         
         if self.api_key:
             try:
+                # Lazy import to avoid ImportError when running without googlemaps
+                googlemaps = importlib.import_module('googlemaps')
                 self.client = googlemaps.Client(key=self.api_key)
+            except ImportError:
+                # Package not installed; client remains None and caller will fall back to mock
+                self.init_error = "googlemaps package not installed"
+                print("googlemaps package not installed. Using mock transit data if available.")
             except Exception as e:
+                self.init_error = f"Error initializing Google Maps client: {e}"
                 print(f"Error initializing Google Maps client: {e}")
     
     def get_transit_directions(
@@ -46,9 +54,12 @@ class GoogleTransitAPI:
             Dict containing transit route information
         """
         if not self.client:
+            error_msg = self.init_error or (
+                'No API key provided' if not self.api_key else 'Google Maps client unavailable'
+            )
             return {
                 'success': False,
-                'error': 'Google Maps API key not configured'
+                'error': error_msg
             }
         
         try:

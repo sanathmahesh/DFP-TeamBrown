@@ -8,6 +8,23 @@ import pandas as pd
 from datetime import datetime
 import sys
 import os
+from typing import Optional, Tuple
+import importlib
+import math
+
+try:
+    # Load environment variables from a .env file if present
+    from dotenv import load_dotenv  # type: ignore
+    load_dotenv()
+except Exception:
+    # dotenv is optional; app still works without it
+    pass
+
+# Optional config.py support (keys can be stored there locally)
+try:  # pragma: no cover - optional file
+    import config  # type: ignore
+except Exception:
+    config = None  # type: ignore
 
 # Add src directory to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
@@ -63,18 +80,26 @@ st.markdown("""
         padding-bottom: 1rem;
     }
     .success-box {
-        background-color: #d4edda;
-        border: 1px solid #c3e6cb;
+        background-color: #e9f7ef; /* lighter green for contrast */
+        border: 1px solid #28a745; /* stronger border */
         border-radius: 0.5rem;
         padding: 1rem;
         margin: 1rem 0;
+        color: #155724; /* darker text */
+        line-height: 1.4;
+    }
+    .success-box strong { color: #0f5132; }
     }
     .info-box {
-        background-color: #d1ecf1;
-        border: 1px solid #bee5eb;
+        background-color: #e8f4fb; /* lighter blue */
+        border: 1px solid #90cdf4; /* stronger border */
         border-radius: 0.5rem;
         padding: 1rem;
         margin: 1rem 0;
+        color: #0c5460; /* darker text */
+        line-height: 1.4;
+    }
+    .info-box strong { color: #084c61; }
     }
     </style>
     """, unsafe_allow_html=True)
@@ -86,8 +111,155 @@ def initialize_session_state():
         st.session_state.shuttle_data = None
     if 'last_fetch' not in st.session_state:
         st.session_state.last_fetch = None
+    # Legacy flag retained for backward compatibility; per-service mock fallback is used now
     if 'use_mock_data' not in st.session_state:
         st.session_state.use_mock_data = True
+
+
+def resolve_api_keys(
+    google_api_key_input: Optional[str],
+    uber_token_input: Optional[str]
+) -> Tuple[Optional[str], Optional[str]]:
+    """Resolve API keys from UI input, environment variables, or config.py.
+
+    Precedence: UI input > config.py > environment variables
+    """
+    # Google Maps API key resolution
+    google_key: Optional[str] = None
+    if google_api_key_input and google_api_key_input.strip():
+        google_key = google_api_key_input.strip()
+    elif config is not None and getattr(config, 'GOOGLE_MAPS_API_KEY', None):
+        google_key = getattr(config, 'GOOGLE_MAPS_API_KEY')
+    elif os.getenv('GOOGLE_MAPS_API_KEY'):
+        google_key = os.getenv('GOOGLE_MAPS_API_KEY')
+
+    # Uber access token resolution
+    uber_token: Optional[str] = None
+    if uber_token_input and uber_token_input.strip():
+        uber_token = uber_token_input.strip()
+    elif config is not None and getattr(config, 'UBER_ACCESS_TOKEN', None):
+        uber_token = getattr(config, 'UBER_ACCESS_TOKEN')
+    elif os.getenv('UBER_ACCESS_TOKEN'):
+        uber_token = os.getenv('UBER_ACCESS_TOKEN')
+
+    return google_key, uber_token
+
+
+def get_address_suggestions(query: str, api_key: Optional[str]) -> list:
+    """Return address suggestions using Google Places Autocomplete if available."""
+    if not api_key or not query or len(query.strip()) < 3:
+        return []
+
+
+def recommend_shuttle_route(origin_label: str, destination_label: str) -> Tuple[Optional[str], str]:
+    """Heuristic recommendation for the best/fastest CMU shuttle route.
+
+    For preset CMU locations and common neighborhoods, map to the appropriate route.
+    For Shadyside, recommend A/B/AB (closest stop). For unknown areas, return None.
+    """
+    text = f"{origin_label} -> {destination_label}".lower()
+
+    def is_match(s: str) -> bool:
+        return s.lower() in text
+
+    # Bakery Square
+    if is_match('bakery square') or is_match('6425 penn'):
+        return 'Bakery Square', 'Direct Bakery Square shuttle (weekday)'
+
+    # PTC / Mill 19
+    if is_match('ptc') or is_match('technology drive') or is_match('mill 19'):
+        return 'PTC & Mill 19', 'PTC & Mill 19 shuttle (weekday)'
+
+    # Squirrel Hill
+    if is_match('squirrel hill') or is_match('murray ave'):
+        return 'C Route', 'C Route to Squirrel Hill'
+
+    # Shadyside (A/B/AB)
+    if is_match('shadyside') or is_match('centre ave') or is_match('aiken'):
+        return 'A/B/AB', 'Use A, B, or AB (closest stop)'
+
+    # Campus to campus (no shuttle needed)
+    if is_match('main campus') and ('main campus' in destination_label.lower() or 'forbes ave' in destination_label.lower()):
+        return None, 'On-campus travel: walk or campus shuttle as needed'
+
+    return None, 'No direct shuttle match; consider transit or Uber'
+
+
+# Minimal set of common CMU shuttle stops (name, lat, lon)
+SHUTTLE_STOPS = [
+    { 'name': 'Morewood & Forbes (Main Campus)', 'lat': 40.4449, 'lon': -79.9429 },
+    { 'name': 'Fifth Ave & Aiken Ave (Shadyside)', 'lat': 40.4520, 'lon': -79.9392 },
+    { 'name': 'Bakery Square (Penn Ave)', 'lat': 40.4633, 'lon': -79.9214 },
+    { 'name': 'PTC (Technology Dr)', 'lat': 40.4542, 'lon': -79.9196 },
+    { 'name': 'Mill 19 (Hazelwood Green)', 'lat': 40.4288, 'lon': -79.9465 },
+]
+
+
+def haversine_miles(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Return great-circle distance in miles between two points."""
+    R = 3958.8
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlambda = math.radians(lon2 - lon1)
+    a = math.sin(dphi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(dlambda/2)**2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return R * c
+
+
+def geocode_address(address: str, api_key: Optional[str]) -> Optional[Tuple[float, float]]:
+    """Geocode an address to (lat, lon) using Google Geocoding via googlemaps client."""
+    if not api_key or not address:
+        return None
+    try:
+        googlemaps = importlib.import_module('googlemaps')
+        client = googlemaps.Client(key=api_key)
+        result = client.geocode(address)
+        if result and 'geometry' in result[0]:
+            loc = result[0]['geometry']['location']
+            return float(loc['lat']), float(loc['lng'])
+    except Exception:
+        return None
+    return None
+
+
+def get_nearest_shuttle_stop(lat: float, lon: float) -> Tuple[dict, float]:
+    """Return nearest shuttle stop and distance (miles) for given coords."""
+    nearest = min(
+        SHUTTLE_STOPS,
+        key=lambda s: haversine_miles(lat, lon, s['lat'], s['lon'])
+    )
+    dist = haversine_miles(lat, lon, nearest['lat'], nearest['lon'])
+    return nearest, dist
+
+
+def infer_shuttle_route_from_stops(origin_stop_name: str, dest_stop_name: str) -> str:
+    """Infer best shuttle route label from stop names."""
+    name = f"{origin_stop_name} -> {dest_stop_name}".lower()
+    def has(s: str) -> bool:
+        return s.lower() in name
+    if has('bakery'):
+        return 'Bakery Square'
+    if has('ptc') or has('mill 19'):
+        return 'PTC & Mill 19'
+    if has('aiken') or has('shadyside'):
+        return 'A/B/AB'
+    if has('squirrel'):
+        return 'C Route'
+    return 'CMU Shuttle'
+    try:
+        googlemaps = importlib.import_module('googlemaps')
+        client = googlemaps.Client(key=api_key)
+        # Bias around CMU campus
+        location_bias = (40.4433, -79.9436)
+        predictions = client.places_autocomplete(
+            input_text=query.strip(),
+            location=location_bias,
+            radius=5000,
+            types=None
+        )
+        return [p.get('description') for p in predictions][:5]
+    except Exception:
+        return []
 
 
 def display_header():
@@ -222,20 +394,55 @@ def display_comparison_tool():
     col1, col2 = st.columns(2)
     
     with col1:
-        origin = st.selectbox(
-            "📍 Starting Location",
-            options=list(CMU_LOCATIONS.keys()),
-            index=0
-        )
-        st.caption(f"Address: {CMU_LOCATIONS[origin]['address']}")
+        use_custom_addresses = st.checkbox("Use exact addresses", value=False)
+        if use_custom_addresses:
+            origin_address = st.text_input(
+                "📍 Origin address",
+                placeholder="e.g., 5000 Forbes Ave, Pittsburgh, PA",
+                key="origin_address_input"
+            )
+            # Live suggestions for origin address
+            # Resolve a key for suggestions (UI overrides config/env)
+            temp_google_key, _ = resolve_api_keys(st.session_state.get('google_api_key', ''), st.session_state.get('uber_token', '')) if 'google_api_key' in st.session_state else (None, None)
+            # Fallback to config/env if UI field not tracked
+            if not temp_google_key:
+                temp_google_key, _ = resolve_api_keys('', '')
+            suggestions = get_address_suggestions(origin_address, temp_google_key)
+            if suggestions:
+                selected = st.selectbox("Suggestions for origin", options=["(keep typed)"] + suggestions, index=0)
+                if selected != "(keep typed)":
+                    origin_address = selected
+        else:
+            origin = st.selectbox(
+                "📍 Starting Location",
+                options=list(CMU_LOCATIONS.keys()),
+                index=0
+            )
+            st.caption(f"Address: {CMU_LOCATIONS[origin]['address']}")
     
     with col2:
-        destination = st.selectbox(
-            "🎯 Destination",
-            options=list(CMU_LOCATIONS.keys()),
-            index=3  # Default to Shadyside
-        )
-        st.caption(f"Address: {CMU_LOCATIONS[destination]['address']}")
+        if use_custom_addresses:
+            destination_address = st.text_input(
+                "🎯 Destination address",
+                placeholder="e.g., 6425 Penn Ave, Pittsburgh, PA",
+                key="destination_address_input"
+            )
+            # Live suggestions for destination address
+            temp_google_key, _ = resolve_api_keys(st.session_state.get('google_api_key', ''), st.session_state.get('uber_token', '')) if 'google_api_key' in st.session_state else (None, None)
+            if not temp_google_key:
+                temp_google_key, _ = resolve_api_keys('', '')
+            suggestions = get_address_suggestions(destination_address, temp_google_key)
+            if suggestions:
+                selected = st.selectbox("Suggestions for destination", options=["(keep typed)"] + suggestions, index=0)
+                if selected != "(keep typed)":
+                    destination_address = selected
+        else:
+            destination = st.selectbox(
+                "🎯 Destination",
+                options=list(CMU_LOCATIONS.keys()),
+                index=3  # Default to Shadyside
+            )
+            st.caption(f"Address: {CMU_LOCATIONS[destination]['address']}")
     
     # Time selection
     col1, col2 = st.columns(2)
@@ -252,16 +459,36 @@ def display_comparison_tool():
         google_api_key = st.text_input("Google Maps API Key", type="password")
         uber_token = st.text_input("Uber API Token", type="password")
         
-        if google_api_key or uber_token:
-            st.session_state.use_mock_data = False
-        else:
-            st.session_state.use_mock_data = True
+        # Show where keys will be resolved from (informational hint only)
+        resolved_google_key, resolved_uber_token = resolve_api_keys(google_api_key, uber_token)
+        if not resolved_google_key:
+            st.caption("Using mock Public Transit data (no Google Maps API key provided)")
+        if not resolved_uber_token:
+            st.caption("Using mock Uber data (no Uber API token provided)")
     
     if st.button("🔎 Compare Options", type="primary", use_container_width=True):
-        compare_transportation_options(origin, destination, travel_date, travel_time)
+        # Resolve keys again at click time to ensure latest values
+        resolved_google_key, resolved_uber_token = resolve_api_keys(google_api_key, uber_token)
+        if 'use_custom_addresses' in locals() and use_custom_addresses:
+            compare_transportation_options(
+                origin_address.strip(), destination_address.strip(), travel_date, travel_time,
+                resolved_google_key, resolved_uber_token
+            )
+        else:
+            compare_transportation_options(
+                origin, destination, travel_date, travel_time,
+                resolved_google_key, resolved_uber_token
+            )
 
 
-def compare_transportation_options(origin, destination, travel_date, travel_time):
+def compare_transportation_options(
+    origin,
+    destination,
+    travel_date,
+    travel_time,
+    google_api_key: Optional[str],
+    uber_access_token: Optional[str]
+):
     """Compare different transportation options."""
     
     st.markdown("---")
@@ -275,10 +502,60 @@ def compare_transportation_options(origin, destination, travel_date, travel_time
         st.markdown("### 🚌 CMU Shuttle")
         st.markdown('<div class="route-card">', unsafe_allow_html=True)
         st.metric("Cost", "$0.00", "Free for CMU!")
-        st.metric("Estimated Time", "15-20 mins", help="Approximate based on route")
         st.success("✅ Available")
         st.markdown("**Benefits:**")
         st.markdown("- Free with CMU ID\n- Direct campus routes\n- Frequent service")
+
+        # Ensure shuttle routes are available and displayed
+        if st.session_state.get('shuttle_data') is None:
+            fetch_shuttle_data()
+        shuttle_data = st.session_state.get('shuttle_data')
+        if shuttle_data and shuttle_data.get('success') and shuttle_data.get('routes'):
+            with st.expander("View CMU shuttle routes"):
+                for route_name, route_info in shuttle_data['routes'].items():
+                    st.write(f"**{route_name}**")
+                    if 'description' in route_info:
+                        st.caption(route_info['description'])
+        else:
+            st.caption("Shuttle routes will appear once schedules are fetched.")
+        
+        # Nearest stops and estimated shuttle leg time
+        o_coords = None
+        d_coords = None
+        # origin/destination may be labels or free-form text
+        if origin in CMU_LOCATIONS and destination in CMU_LOCATIONS:
+            o_coords = (CMU_LOCATIONS[origin]['lat'], CMU_LOCATIONS[origin]['lon'])
+            d_coords = (CMU_LOCATIONS[destination]['lat'], CMU_LOCATIONS[destination]['lon'])
+        else:
+            o_coords = geocode_address(origin if isinstance(origin, str) else str(origin), google_api_key)
+            d_coords = geocode_address(destination if isinstance(destination, str) else str(destination), google_api_key)
+
+        if o_coords and d_coords:
+            # Find nearest shuttle stops
+            o_stop = min(
+                SHUTTLE_STOPS,
+                key=lambda s: haversine_miles(o_coords[0], o_coords[1], s['lat'], s['lon'])
+            )
+            d_stop = min(
+                SHUTTLE_STOPS,
+                key=lambda s: haversine_miles(d_coords[0], d_coords[1], s['lat'], s['lon'])
+            )
+            o_dist = haversine_miles(o_coords[0], o_coords[1], o_stop['lat'], o_stop['lon'])
+            d_dist = haversine_miles(d_coords[0], d_coords[1], d_stop['lat'], d_stop['lon'])
+            st.caption(f"Nearest shuttle stop from origin: {o_stop['name']} ({o_dist:.2f} mi)")
+            st.caption(f"Nearest shuttle stop to destination: {d_stop['name']} ({d_dist:.2f} mi)")
+
+            leg_miles = haversine_miles(o_stop['lat'], o_stop['lon'], d_stop['lat'], d_stop['lon'])
+            travel_minutes = max(5, int((leg_miles / 12.0) * 60))  # heuristic avg speed
+            st.metric("Estimated Shuttle Time", f"{travel_minutes} mins")
+
+            inferred_route = infer_shuttle_route_from_stops(o_stop['name'], d_stop['name'])
+            with st.expander(f"Suggested Shuttle Route: {inferred_route}"):
+                st.write("Origin stop:", o_stop['name'])
+                st.write("Destination stop:", d_stop['name'])
+                st.write("Approximate in-vehicle distance:", f"{leg_miles:.2f} miles")
+                st.write("Estimated in-vehicle time:", f"{travel_minutes} mins")
+
         st.markdown('</div>', unsafe_allow_html=True)
     
     # Public Transit
@@ -286,18 +563,38 @@ def compare_transportation_options(origin, destination, travel_date, travel_time
         st.markdown("### 🚍 Public Transit")
         st.markdown('<div class="route-card">', unsafe_allow_html=True)
         
-        if st.session_state.use_mock_data:
-            transit_data = get_mock_transit_data(origin, destination)
-            st.info("Using mock data (no API key provided)")
-        else:
-            # Use real API
-            google_api = GoogleTransitAPI()
+        transit_data = None
+        used_transit_mock = False
+        used_transit_live = False
+        transit_error_message = None
+        if google_api_key:
+            google_api = GoogleTransitAPI(api_key=google_api_key)
+            # Use user's selected departure date/time
+            try:
+                departure_dt = datetime.combine(travel_date, travel_time)
+            except Exception:
+                departure_dt = datetime.now()
+            # Support both preset locations and custom addresses
+            if origin in CMU_LOCATIONS and destination in CMU_LOCATIONS:
+                origin_str = CMU_LOCATIONS[origin]['address']
+                dest_str = CMU_LOCATIONS[destination]['address']
+            else:
+                origin_str = origin
+                dest_str = destination
             transit_data = google_api.get_transit_directions(
-                CMU_LOCATIONS[origin]['address'],
-                CMU_LOCATIONS[destination]['address']
+                origin_str,
+                dest_str,
+                departure_time=departure_dt
             )
+            if transit_data.get('success'):
+                used_transit_live = True
+            else:
+                transit_error_message = transit_data.get('error') or 'Unknown error from Google Maps Directions API'
+        else:
+            transit_data = get_mock_transit_data(origin, destination)
+            used_transit_mock = True
         
-        if transit_data['success'] and transit_data['routes']:
+        if transit_data and transit_data.get('success') and transit_data.get('routes'):
             route = transit_data['routes'][0]
             st.metric("Cost", "$2.75", "Standard fare")
             st.metric("Travel Time", route['duration'])
@@ -310,9 +607,41 @@ def compare_transportation_options(origin, destination, travel_date, travel_time
                         st.write(f"  Line: {step['transit']['line']}")
                         st.write(f"  From: {step['transit']['departure_stop']}")
                         st.write(f"  To: {step['transit']['arrival_stop']}")
+            # Show nearest shuttle/transit stops (approximate)
+            # If using presets, use their coordinates; else attempt geocoding
+            origin_coords = None
+            dest_coords = None
+            if origin in CMU_LOCATIONS and destination in CMU_LOCATIONS:
+                origin_coords = (CMU_LOCATIONS[origin]['lat'], CMU_LOCATIONS[origin]['lon'])
+                dest_coords = (CMU_LOCATIONS[destination]['lat'], CMU_LOCATIONS[destination]['lon'])
+            else:
+                origin_coords = geocode_address(origin, google_api_key)
+                dest_coords = geocode_address(destination, google_api_key)
+
+            if origin_coords:
+                nearest_origin = min(
+                    SHUTTLE_STOPS,
+                    key=lambda s: haversine_miles(origin_coords[0], origin_coords[1], s['lat'], s['lon'])
+                )
+                st.caption(f"Nearest shuttle stop from origin: {nearest_origin['name']}")
+            if dest_coords:
+                nearest_dest = min(
+                    SHUTTLE_STOPS,
+                    key=lambda s: haversine_miles(dest_coords[0], dest_coords[1], s['lat'], s['lon'])
+                )
+                st.caption(f"Nearest shuttle stop to destination: {nearest_dest['name']}")
+        elif transit_error_message:
+            st.error("Transit data error: " + transit_error_message)
+            with st.expander("Troubleshoot Google Maps API"):
+                st.markdown("- Ensure Directions API is enabled for your project")
+                st.markdown("- Verify billing is active on the project")
+                st.markdown("- Temporarily set key restrictions to None while testing")
+                st.markdown("- Confirm the key in config.py or UI matches your Google Console key")
         else:
             st.warning("Transit data unavailable")
         
+        if used_transit_live:
+            st.caption("Live Google Maps transit data")
         st.markdown('</div>', unsafe_allow_html=True)
     
     # Uber
@@ -320,18 +649,27 @@ def compare_transportation_options(origin, destination, travel_date, travel_time
         st.markdown("### 🚗 Uber")
         st.markdown('<div class="route-card">', unsafe_allow_html=True)
         
-        if st.session_state.use_mock_data:
-            uber_data = get_mock_uber_estimates(origin, destination)
-            st.info("Using mock data (no API key provided)")
-        else:
-            # Use real API
-            uber_api = UberAPI()
+        uber_data = None
+        used_uber_mock = False
+        # Only attempt real Uber estimates for preset CMU locations
+        if uber_access_token and (origin in CMU_LOCATIONS and destination in CMU_LOCATIONS):
+            uber_api = UberAPI(access_token=uber_access_token)
             origin_coords = CMU_LOCATIONS[origin]
             dest_coords = CMU_LOCATIONS[destination]
             uber_data = uber_api.get_price_estimates(
                 origin_coords['lat'], origin_coords['lon'],
                 dest_coords['lat'], dest_coords['lon']
             )
+            if not uber_data.get('success'):
+                uber_data = get_mock_uber_estimates(origin, destination)
+                used_uber_mock = True
+        else:
+            # For custom addresses, show mock Uber estimates
+            uber_data = get_mock_uber_estimates(
+                origin if isinstance(origin, str) else str(origin),
+                destination if isinstance(destination, str) else str(destination)
+            )
+            used_uber_mock = True
         
         if uber_data['success'] and uber_data['estimates']:
             for estimate in uber_data['estimates'][:3]:  # Show top 3 options
@@ -344,29 +682,74 @@ def compare_transportation_options(origin, destination, travel_date, travel_time
         else:
             st.warning("Uber data unavailable")
         
+        if used_uber_mock:
+            st.info("Using mock Uber data (no valid Uber API token)")
         st.markdown('</div>', unsafe_allow_html=True)
     
     # Summary comparison
     st.markdown("---")
     st.subheader("💡 Summary & Recommendations")
     
+    # Compute fastest option dynamically from available data
+    fastest_label = None
+    fastest_time = None
+    details = []
+
+    # Transit time
+    transit_time_seconds = None
+    if transit_data and transit_data.get('success') and transit_data.get('routes'):
+        transit_time_seconds = transit_data['routes'][0].get('duration_seconds')
+        if isinstance(transit_time_seconds, int):
+            fastest_label = 'Public Transit'
+            fastest_time = transit_time_seconds
+            details.append(("Public Transit", transit_time_seconds))
+
+    # Uber time (best among estimates)
+    uber_best_seconds = None
+    if uber_data and uber_data.get('success') and uber_data.get('estimates'):
+        try:
+            uber_best_seconds = min(e.get('duration') for e in uber_data['estimates'] if isinstance(e.get('duration'), int))
+        except ValueError:
+            uber_best_seconds = None
+        if isinstance(uber_best_seconds, int):
+            details.append(("Uber", uber_best_seconds))
+            if fastest_time is None or uber_best_seconds < fastest_time:
+                fastest_label = 'Uber'
+                fastest_time = uber_best_seconds
+
+    # Build summary UI
     col1, col2 = st.columns(2)
     with col1:
-        st.markdown("""
-        <div class="success-box">
+        fastest_text = f"{fastest_label} ({format_duration(fastest_time)})" if fastest_label and isinstance(fastest_time, int) else "Depends on time"
+        st.markdown(f"""
+        <div class=\"success-box\"> 
         <strong>💰 Best Value:</strong> CMU Shuttle (Free!)<br>
-        <strong>⚡ Fastest:</strong> Uber (13 mins)<br>
+        <strong>⚡ Fastest:</strong> {fastest_text}<br>
         <strong>🌱 Most Sustainable:</strong> Public Transit / Shuttle
         </div>
         """, unsafe_allow_html=True)
-    
+
     with col2:
-        st.markdown("""
-        **Recommendation:**
-        - Use **CMU Shuttle** when schedules align - it's free!
-        - **Public Transit** is affordable and reliable
-        - **Uber** for urgent trips or off-peak hours
-        """)
+        # Shuttle recommendation based on origin/destination labels
+        if origin in CMU_LOCATIONS and destination in CMU_LOCATIONS:
+            origin_label = CMU_LOCATIONS[origin]['address']
+            destination_label = CMU_LOCATIONS[destination]['address']
+        else:
+            origin_label = origin if isinstance(origin, str) else str(origin)
+            destination_label = destination if isinstance(destination, str) else str(destination)
+        shuttle_rec, shuttle_note = recommend_shuttle_route(origin_label, destination_label)
+
+        if details:
+            st.markdown("**Observed travel times:**")
+            for name, secs in details:
+                st.markdown(f"- {name}: {format_duration(secs)}")
+        st.markdown("**Recommendation:**")
+        if shuttle_rec:
+            st.markdown(f"- Best CMU Shuttle: **{shuttle_rec}** — {shuttle_note}")
+        else:
+            st.markdown(f"- {shuttle_note}")
+        st.markdown("- Public Transit for cost-effective trips")
+        st.markdown("- Uber for urgency or off-peak hours")
 
 
 def display_about():

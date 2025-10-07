@@ -3,10 +3,9 @@ Uber API integration.
 Module for fetching Uber ride estimates and comparing costs/times with other transport options.
 """
 
-from uber_rides.session import Session
-from uber_rides.client import UberRidesClient
 from typing import Dict, Optional, List
 import os
+import importlib
 
 
 class UberAPI:
@@ -24,8 +23,14 @@ class UberAPI:
         
         if self.access_token:
             try:
-                session = Session(server_token=self.access_token)
-                self.client = UberRidesClient(session)
+                # Lazy import to avoid ImportError when package is absent
+                uber_rides_session = importlib.import_module('uber_rides.session')
+                uber_rides_client = importlib.import_module('uber_rides.client')
+                session = uber_rides_session.Session(server_token=self.access_token)
+                self.client = uber_rides_client.UberRidesClient(session)
+            except ImportError:
+                # Package not installed; downstream will fall back to mock
+                print("uber_rides package not installed. Using mock Uber data if available.")
             except Exception as e:
                 print(f"Error initializing Uber client: {e}")
     
