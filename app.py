@@ -5,7 +5,7 @@ A Streamlit web application for comparing shuttle, public transit, and ride-shar
 
 import streamlit as st
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 import sys
 import os
 from typing import Optional, Tuple
@@ -32,6 +32,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 from scraper import CMUShuttleScraper
 from google_transit import GoogleTransitAPI, get_mock_transit_data
 from uber_api import UberAPI, get_mock_uber_estimates
+from shuttle_routing import plan_shuttle_trip
 from utils import (
     get_day_of_week, 
     format_duration, 
@@ -149,7 +150,20 @@ def get_address_suggestions(query: str, api_key: Optional[str]) -> list:
     """Return address suggestions using Google Places Autocomplete if available."""
     if not api_key or not query or len(query.strip()) < 3:
         return []
-
+    try:
+        googlemaps = importlib.import_module('googlemaps')
+        client = googlemaps.Client(key=api_key)
+        # Bias around CMU campus
+        location_bias = (40.4433, -79.9436)
+        predictions = client.places_autocomplete(
+            input_text=query.strip(),
+            location=location_bias,
+            radius=8000,
+            types=None
+        )
+        return [p.get('description') for p in predictions][:5]
+    except Exception:
+        return []
 
 def recommend_shuttle_route(origin_label: str, destination_label: str) -> Tuple[Optional[str], str]:
     """Heuristic recommendation for the best/fastest CMU shuttle route.
@@ -246,20 +260,6 @@ def infer_shuttle_route_from_stops(origin_stop_name: str, dest_stop_name: str) -
     if has('squirrel'):
         return 'C Route'
     return 'CMU Shuttle'
-    try:
-        googlemaps = importlib.import_module('googlemaps')
-        client = googlemaps.Client(key=api_key)
-        # Bias around CMU campus
-        location_bias = (40.4433, -79.9436)
-        predictions = client.places_autocomplete(
-            input_text=query.strip(),
-            location=location_bias,
-            radius=5000,
-            types=None
-        )
-        return [p.get('description') for p in predictions][:5]
-    except Exception:
-        return []
 
 
 def display_header():
@@ -530,31 +530,44 @@ def compare_transportation_options(
             o_coords = geocode_address(origin if isinstance(origin, str) else str(origin), google_api_key)
             d_coords = geocode_address(destination if isinstance(destination, str) else str(destination), google_api_key)
 
+        shuttle_total_minutes = None
         if o_coords and d_coords:
-            # Find nearest shuttle stops
-            o_stop = min(
-                SHUTTLE_STOPS,
-                key=lambda s: haversine_miles(o_coords[0], o_coords[1], s['lat'], s['lon'])
+            # Build a schedule-aware plan with walking and wait time
+            try:
+                departure_dt = datetime.combine(travel_date, travel_time)
+            except Exception:
+                departure_dt = datetime.now()
+            plan = plan_shuttle_trip(
+                origin_coords=(o_coords[0], o_coords[1]),
+                dest_coords=(d_coords[0], d_coords[1]),
+                when=departure_dt,
+                google_api_key=google_api_key,
             )
-            d_stop = min(
-                SHUTTLE_STOPS,
-                key=lambda s: haversine_miles(d_coords[0], d_coords[1], s['lat'], s['lon'])
-            )
-            o_dist = haversine_miles(o_coords[0], o_coords[1], o_stop['lat'], o_stop['lon'])
-            d_dist = haversine_miles(d_coords[0], d_coords[1], d_stop['lat'], d_stop['lon'])
-            st.caption(f"Nearest shuttle stop from origin: {o_stop['name']} ({o_dist:.2f} mi)")
-            st.caption(f"Nearest shuttle stop to destination: {d_stop['name']} ({d_dist:.2f} mi)")
-
-            leg_miles = haversine_miles(o_stop['lat'], o_stop['lon'], d_stop['lat'], d_stop['lon'])
-            travel_minutes = max(5, int((leg_miles / 12.0) * 60))  # heuristic avg speed
-            st.metric("Estimated Shuttle Time", f"{travel_minutes} mins")
-
-            inferred_route = infer_shuttle_route_from_stops(o_stop['name'], d_stop['name'])
-            with st.expander(f"Suggested Shuttle Route: {inferred_route}"):
-                st.write("Origin stop:", o_stop['name'])
-                st.write("Destination stop:", d_stop['name'])
-                st.write("Approximate in-vehicle distance:", f"{leg_miles:.2f} miles")
-                st.write("Estimated in-vehicle time:", f"{travel_minutes} mins")
+            if plan.get('success'):
+                totals = plan['totals']
+                shuttle_total_minutes = totals.get('minutes')
+                st.metric("Estimated Total Time", f"{shuttle_total_minutes} mins")
+                with st.expander(f"Shuttle plan: {plan['route_name']}"):
+                    st.write(f"Origin stop: {plan['origin_stop']}")
+                    st.write(f"Destination stop: {plan['dest_stop']}")
+                    if 'times' in plan:
+                        st.write(f"Boarding time: {plan['times'].get('board_time')}")
+                        st.write(f"Arrival time: {plan['times'].get('arrival_time')}")
+                    st.markdown("**Steps:**")
+                    for step in plan['steps']:
+                        if step['type'] == 'WALK':
+                            st.write(f"Walk {step['minutes']} mins: {step['from']} → {step['to']}")
+                        elif step['type'] == 'WAIT':
+                            st.write(f"Wait {step['minutes']} mins at {step['at']} for {step['route']}")
+                        elif step['type'] == 'SHUTTLE':
+                            miles_txt = f" ({step['miles']} mi)" if 'miles' in step else ""
+                            st.write(f"Ride {step['minutes']} mins on {step['route']}: {step['from']} → {step['to']}{miles_txt}")
+                    st.markdown("**Breakdown:**")
+                    st.write(f"Walking: {totals.get('walk_minutes')} mins")
+                    st.write(f"Waiting: {totals.get('wait_minutes')} mins")
+                    st.write(f"In-vehicle: {totals.get('in_vehicle_minutes')} mins")
+            else:
+                st.caption("No direct shuttle route found or not operating at the selected time.")
 
         st.markdown('</div>', unsafe_allow_html=True)
     
@@ -599,6 +612,8 @@ def compare_transportation_options(
             st.metric("Cost", "$2.75", "Standard fare")
             st.metric("Travel Time", route['duration'])
             st.metric("Distance", route['distance'])
+            if 'departure_time' in route and 'arrival_time' in route:
+                st.caption(f"Departs at {route['departure_time']} • Arrives by {route['arrival_time']}")
             
             with st.expander("View Route Details"):
                 for step in route['steps']:
@@ -706,6 +721,13 @@ def compare_transportation_options(
 
     # Uber time (best among estimates)
     uber_best_seconds = None
+    # Shuttle time from plan
+    if 'shuttle_total_minutes' in locals() and isinstance(shuttle_total_minutes, int):
+        s_secs = shuttle_total_minutes * 60
+        details.append(("Shuttle", s_secs))
+        if fastest_time is None or s_secs < fastest_time:
+            fastest_label = 'Shuttle'
+            fastest_time = s_secs
     if uber_data and uber_data.get('success') and uber_data.get('estimates'):
         try:
             uber_best_seconds = min(e.get('duration') for e in uber_data['estimates'] if isinstance(e.get('duration'), int))
