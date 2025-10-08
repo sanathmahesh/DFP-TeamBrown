@@ -29,7 +29,7 @@ class POGOHBikesAPI:
     
     def __init__(self, csv_file_path: str = "POGOH Dataset.csv", google_api_key: Optional[str] = None):
         """
-        Initialize POGOH API with station data and Google API integration.
+        Initialize POGOH API with station data.
         
         Args:
             csv_file_path: Path to the POGOH Dataset CSV file

@@ -545,10 +545,11 @@ def display_comparison_tool():
     """, unsafe_allow_html=True)
     
     # Location selection
+    use_custom_addresses = st.checkbox("Use exact addresses", value=False)
+    
     col1, col2 = st.columns(2)
     
     with col1:
-        use_custom_addresses = st.checkbox("Use exact addresses", value=False)
         if use_custom_addresses:
             origin_address = st.text_input(
                 "📍 Origin address",
@@ -605,25 +606,9 @@ def display_comparison_tool():
     with col2:
         travel_time = st.time_input("⏰ Time", datetime.now().time())
     
-    # API Configuration
-    with st.expander("⚙️ API Configuration (Optional)"):
-        st.markdown("""
-        Enter your API keys to get real-time data. If left empty, mock data will be used for demonstration.
-        
-        **Google Maps API Requirements:**
-        - For Public Transit: Directions API
-        - For POGOH Bikes with custom addresses: Geocoding API + Directions API
-        - For POGOH Bikes with preset locations: Directions API only
-        """)
-        google_api_key = st.text_input("Google Maps API Key", type="password")
-        uber_token = st.text_input("Uber API Token", type="password")
-        
-        # Show where keys will be resolved from (informational hint only)
-        resolved_google_key, resolved_uber_token = resolve_api_keys(google_api_key, uber_token)
-        if not resolved_google_key:
-            st.caption("Using mock Public Transit data (no Google Maps API key provided)")
-        if not resolved_uber_token:
-            st.caption("Using mock Uber data (no Uber API token provided)")
+    # API keys are resolved from config.py or environment variables
+    google_api_key = ""
+    uber_token = ""
     
     if st.button("🔎 Compare Options", type="primary", use_container_width=True):
         # Resolve keys again at click time to ensure latest values
@@ -879,25 +864,20 @@ def compare_transportation_options(
         
         uber_data = None
         used_uber_mock = False
-        # Only attempt real Uber estimates for preset CMU locations
-        if uber_access_token and (origin in CMU_LOCATIONS and destination in CMU_LOCATIONS):
-            uber_api = UberAPI(access_token=uber_access_token)
-            origin_coords = CMU_LOCATIONS[origin]
-            dest_coords = CMU_LOCATIONS[destination]
-            uber_data = uber_api.get_price_estimates(
-                origin_coords['lat'], origin_coords['lon'],
-                dest_coords['lat'], dest_coords['lon']
-            )
-            if not uber_data.get('success'):
-                uber_data = get_mock_uber_estimates(origin, destination)
-                used_uber_mock = True
+        # Use distance-based calculation for Uber estimates (works with both preset and custom addresses)
+        uber_api = UberAPI(access_token=uber_access_token, google_api_key=google_api_key)
+        
+        if origin in CMU_LOCATIONS and destination in CMU_LOCATIONS:
+            # Use preset location addresses
+            origin_address = CMU_LOCATIONS[origin]['address']
+            dest_address = CMU_LOCATIONS[destination]['address']
         else:
-            # For custom addresses, show mock Uber estimates
-            uber_data = get_mock_uber_estimates(
-                origin if isinstance(origin, str) else str(origin),
-                destination if isinstance(destination, str) else str(destination)
-            )
-            used_uber_mock = True
+            # Use custom addresses directly
+            origin_address = origin if isinstance(origin, str) else str(origin)
+            dest_address = destination if isinstance(destination, str) else str(destination)
+        
+        # Get Uber estimates using distance-based calculation
+        uber_data = uber_api.get_price_estimates_by_address(origin_address, dest_address)
         
         if uber_data['success'] and uber_data['estimates']:
             for estimate in uber_data['estimates'][:3]:  # Show top 3 options
@@ -907,11 +887,14 @@ def compare_transportation_options(
                     st.metric("Distance", f"{estimate['distance']:.1f} miles")
                     if estimate['surge_multiplier'] > 1:
                         st.warning(f"⚠️ Surge pricing: {estimate['surge_multiplier']}x")
+            
+            # Show pricing method
+            if google_api_key:
+                st.success("✅ Distance-based pricing with Google Maps")
+            else:
+                st.info("⚠️ Using estimated distance-based pricing (Google API not available)")
         else:
             st.warning("Uber data unavailable")
-        
-        if used_uber_mock:
-            st.info("Using mock Uber data (no valid Uber API token)")
         st.markdown('</div>', unsafe_allow_html=True)
     
     # POGOH Bikes
