@@ -11,6 +11,7 @@ import os
 from typing import Optional, Tuple
 import importlib
 import math
+import pydeck as pdk
 
 try:
     # Load environment variables from a .env file if present
@@ -53,57 +54,179 @@ st.set_page_config(
 # Custom CSS for better styling
 st.markdown("""
     <style>
-    .main {
-        padding: 0rem 1rem;
+    :root {
+        --cmu-red: #C41230;
+        --cmu-gray: #F5F6F9;
+        --cmu-dark: #1B1B1B;
+        --cmu-light: #FFFFFF;
     }
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 2rem;
+
+    /* ====== GLOBAL BACKGROUND ====== */
+    .stApp, .main, .block-container {
+        background-color: var(--cmu-gray) !important;
+        color: var(--cmu-dark);
     }
-    .stTabs [data-baseweb="tab"] {
-        padding: 1rem 2rem;
-        font-size: 1.1rem;
+    
+    
+
+    /* ====== HERO / TITLE SECTION ====== */
+    div:has(> h1:contains("CMU Transportation Comparison Tool")) {
+        background-color: var(--cmu-gray) !important;
+        color: var(--cmu-dark) !important;
+        border-radius: 0 !important;
+        padding: 1rem 0 !important;
+        box-shadow: none !important;
     }
-    .metric-card {
-        background-color: #f0f2f6;
-        padding: 1.5rem;
-        border-radius: 0.5rem;
-        margin: 0.5rem 0;
+
+    h1, h2, h3, h4 {
+        color: var(--cmu-dark) !important;
+        font-weight: 700;
     }
+
+    /* ====== BUTTONS ====== */
+    .stButton>button {
+        background-color: var(--cmu-red) !important;
+        color: var(--cmu-light) !important;
+        border-radius: 8px !important;
+        font-weight: 600 !important;
+        border: none !important;
+        padding: 0.6rem 1.2rem !important;
+        transition: all 0.2s ease;
+    }
+    .stButton>button:hover {
+        background-color: #a11126 !important;
+        transform: translateY(-1px);
+    }
+
+    /* ====== ROUTE & INFO BOXES ====== */
     .route-card {
-        border: 1px solid #e0e0e0;
-        border-radius: 0.5rem;
-        padding: 1rem;
-        margin: 0.5rem 0;
-        background-color: white;
+        background-color: #ffffff;
+        padding: 1.5rem;
+        border-radius: 12px;
+        margin-bottom: 1.5rem;
+        border: 1px solid #ddd;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
     }
-    h1 {
-        color: #c41230;
-        padding-bottom: 1rem;
+    .route-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 10px rgba(0,0,0,0.1);
     }
     .success-box {
-        background-color: #e9f7ef; /* lighter green for contrast */
-        border: 1px solid #28a745; /* stronger border */
-        border-radius: 0.5rem;
+        background-color: #e8f5e9;
         padding: 1rem;
-        margin: 1rem 0;
-        color: #155724; /* darker text */
-        line-height: 1.4;
-    }
-    .success-box strong { color: #0f5132; }
+        border-radius: 8px;
+        border-left: 5px solid #4caf50;
+        margin-bottom: 1rem;
     }
     .info-box {
-        background-color: #e8f4fb; /* lighter blue */
-        border: 1px solid #90cdf4; /* stronger border */
-        border-radius: 0.5rem;
+        background-color: #e3f2fd;
         padding: 1rem;
-        margin: 1rem 0;
-        color: #0c5460; /* darker text */
-        line-height: 1.4;
+        border-radius: 8px;
+        border-left: 5px solid #2196f3;
+        margin-bottom: 1rem;
     }
-    .info-box strong { color: #084c61; }
+
+    /* ====== METRICS ====== */
+    [data-testid="stMetricValue"] {
+        color: var(--cmu-dark) !important;
+        font-size: 1.5rem !important;
+        font-weight: 600;
     }
+
+    /* ====== TABS ====== */
+    .stTabs [role="tablist"] {
+        border-bottom: 2px solid #ccc;
+    }
+    .stTabs [role="tab"][aria-selected="true"] {
+        border-bottom: 3px solid #444 !important;
+        font-weight: 600 !important;
+        color: var(--cmu-dark) !important;
+    }
+
+    /* ====== EXPANDER ====== */
+    .streamlit-expanderHeader {
+        font-weight: 600;
+    }
+
+    /* ====== DIVIDERS ====== */
+    hr {
+        border: 0;
+        height: 1px;
+        background-color: #ddd;
+        margin: 2rem 0;
+    }
+
+    /* ====== SIDEBAR BASE ====== */
+section[data-testid="stSidebar"] {
+    background-color: #2E2E2E !important;
+    color: #FFFFFF !important;
+    padding-top: 0 !important;
+    border-right: none !important;
+}
+
+/* ====== LOGO AREA ====== */
+section[data-testid="stSidebar"] div[data-testid="stSidebarNav"] {
+    background-color: #C41230 !important;
+    padding: 1rem 0.5rem !important;
+    text-align: center;
+}
+section[data-testid="stSidebar"] img {
+    width: 160px !important;
+    border-radius: 4px;
+}
+
+/* ====== TITLES ====== */
+section[data-testid="stSidebar"] h3, 
+section[data-testid="stSidebar"] h4 {
+    color: #FFFFFF !important;
+    text-align: center;
+    margin-bottom: 0.4rem;
+}
+section[data-testid="stSidebar"] p {
+    color: #CCCCCC !important;
+    font-size: 0.9rem;
+    text-align: center;
+    margin-bottom: 1rem;
+}
+
+/* ====== LINKS ====== */
+section[data-testid="stSidebar"] a {
+    color: #FFFFFF !important;
+    text-decoration: none !important;
+    font-weight: 500;
+    display: block;
+    padding: 0.4rem 0.6rem;
+    border-radius: 6px;
+    transition: all 0.2s ease-in-out;
+}
+section[data-testid="stSidebar"] a:hover {
+    background-color: #C41230 !important;
+}
+
+/* ====== DIVIDERS ====== */
+section[data-testid="stSidebar"] hr {
+    border: none !important;
+    border-top: 1px solid #444 !important;
+    margin: 1.2rem 0 !important;
+}
+
+/* ====== ICONS & HEADERS ====== */
+section[data-testid="stSidebar"] h4::before {
+    margin-right: 6px;
+}
+
+/* ====== CONTACT SECTION ====== */
+section[data-testid="stSidebar"] .contact-section p {
+    text-align: left;
+    margin: 0.2rem 0;
+}
     </style>
-    """, unsafe_allow_html=True)
+""", unsafe_allow_html=True)
+
+
+
+
 
 
 def initialize_session_state():
@@ -263,10 +386,19 @@ def infer_shuttle_route_from_stops(origin_stop_name: str, dest_stop_name: str) -
 
 
 def display_header():
-    """Display the app header."""
-    st.title("🚌 CMU Transportation Comparison Tool")
-    st.markdown("**Compare shuttle, public transit, and ride-sharing options for Carnegie Mellon University**")
-    st.markdown("---")
+    st.markdown("""
+<div style="
+    background-color:#F5F6F9;
+    padding:2rem;
+    border-radius:12px;
+    text-align:center;
+    border:1px solid #ddd;
+">
+    <h1 style="color:#1B1B1B;">🚌 CMU Transportation Comparison Tool</h1>
+    <p style="color:#333;">Find the fastest, cheapest, and most sustainable routes around Pittsburgh.</p>
+</div>
+""", unsafe_allow_html=True)
+
 
 
 def fetch_shuttle_data():
@@ -338,16 +470,16 @@ def display_shuttle_schedules():
                 st.markdown("### A, B, and AB Routes (Shadyside)")
                 if 'A_B_AB_Routes_Weekday' in schedules:
                     st.write("**Monday - Friday:**")
-                    st.dataframe(schedules['A_B_AB_Routes_Weekday'], use_container_width=True)
+                    st.data_editor(schedules['A_B_AB_Routes_Weekday'], use_container_width=True)
                 if 'A_B_AB_Routes_Weekend' in schedules:
                     st.write("**Saturday & Sunday:**")
-                    st.dataframe(schedules['A_B_AB_Routes_Weekend'], use_container_width=True)
+                    st.data_editor(schedules['A_B_AB_Routes_Weekend'], use_container_width=True)
             
             with schedule_tabs[1]:
                 st.markdown("### C Route (Squirrel Hill)")
                 if 'C_Route_Weekday' in schedules:
                     st.write("**Monday - Friday:**")
-                    st.dataframe(schedules['C_Route_Weekday'], use_container_width=True)
+                    st.data_editor(schedules['C_Route_Weekday'], use_container_width=True)
                 else:
                     st.info("No weekend service for C Route")
             
@@ -355,16 +487,16 @@ def display_shuttle_schedules():
                 st.markdown("### PTC & Mill 19 Routes")
                 if 'PTC_Mill19_Weekday' in schedules:
                     st.write("**Monday - Friday:**")
-                    st.dataframe(schedules['PTC_Mill19_Weekday'], use_container_width=True)
+                    st.data_editor(schedules['PTC_Mill19_Weekday'], use_container_width=True)
                 if 'PTC_Mill19_Weekend' in schedules:
                     st.write("**Saturday & Sunday:**")
-                    st.dataframe(schedules['PTC_Mill19_Weekend'], use_container_width=True)
+                    st.data_editor(schedules['PTC_Mill19_Weekend'], use_container_width=True)
             
             with schedule_tabs[3]:
                 st.markdown("### Bakery Square Routes")
                 if 'Bakery_Square_Weekday' in schedules:
                     st.write("**Monday - Friday:**")
-                    st.dataframe(schedules['Bakery_Square_Weekday'], use_container_width=True)
+                    st.data_editor(schedules['Bakery_Square_Weekday'], use_container_width=True)
                 else:
                     st.info("Bakery Square route operates Monday-Friday only")
         
@@ -505,8 +637,22 @@ def compare_transportation_options(
         st.success("✅ Available")
         st.markdown("**Benefits:**")
         st.markdown("- Free with CMU ID\n- Direct campus routes\n- Frequent service")
+        
 
-        # Ensure shuttle routes are available and displayed
+                # --- Map preview for shuttle route ---
+        if origin in CMU_LOCATIONS and destination in CMU_LOCATIONS:
+            o_coords = (CMU_LOCATIONS[origin]['lat'], CMU_LOCATIONS[origin]['lon'])
+            d_coords = (CMU_LOCATIONS[destination]['lat'], CMU_LOCATIONS[destination]['lon'])
+
+            st.markdown("**🗺️ Route Preview:**")
+            map_data = pd.DataFrame([
+                {'lat': o_coords[0], 'lon': o_coords[1]},
+                {'lat': d_coords[0], 'lon': d_coords[1]}
+            ])
+            st.map(map_data, use_container_width=True)
+        else:
+            st.info("Map preview available only for preset CMU locations.")
+            # Ensure shuttle routes are available and displayed
         if st.session_state.get('shuttle_data') is None:
             fetch_shuttle_data()
         shuttle_data = st.session_state.get('shuttle_data')
@@ -571,50 +717,63 @@ def compare_transportation_options(
 
         st.markdown('</div>', unsafe_allow_html=True)
     
-    # Public Transit
+
+
+        # Public Transit
     with col2:
         st.markdown("### 🚍 Public Transit")
         st.markdown('<div class="route-card">', unsafe_allow_html=True)
-        
+        st.markdown("**Benefits:** Extensive network, frequent service")
+
         transit_data = None
         used_transit_mock = False
         used_transit_live = False
         transit_error_message = None
+
+        # --- Fetch transit data (real or mock) ---
         if google_api_key:
             google_api = GoogleTransitAPI(api_key=google_api_key)
-            # Use user's selected departure date/time
             try:
                 departure_dt = datetime.combine(travel_date, travel_time)
             except Exception:
                 departure_dt = datetime.now()
-            # Support both preset locations and custom addresses
+            
             if origin in CMU_LOCATIONS and destination in CMU_LOCATIONS:
                 origin_str = CMU_LOCATIONS[origin]['address']
                 dest_str = CMU_LOCATIONS[destination]['address']
             else:
                 origin_str = origin
                 dest_str = destination
+
             transit_data = google_api.get_transit_directions(
                 origin_str,
                 dest_str,
                 departure_time=departure_dt
             )
+
             if transit_data.get('success'):
                 used_transit_live = True
             else:
-                transit_error_message = transit_data.get('error') or 'Unknown error from Google Maps Directions API'
+                transit_error_message = (
+                    transit_data.get('error') 
+                    or 'Unknown error from Google Maps Directions API'
+                )
         else:
             transit_data = get_mock_transit_data(origin, destination)
             used_transit_mock = True
-        
+
+        # --- Display results ---
         if transit_data and transit_data.get('success') and transit_data.get('routes'):
             route = transit_data['routes'][0]
             st.metric("Cost", "$2.75", "Standard fare")
             st.metric("Travel Time", route['duration'])
             st.metric("Distance", route['distance'])
+
             if 'departure_time' in route and 'arrival_time' in route:
-                st.caption(f"Departs at {route['departure_time']} • Arrives by {route['arrival_time']}")
-            
+                st.caption(
+                    f"Departs at {route['departure_time']} • Arrives by {route['arrival_time']}"
+                )
+
             with st.expander("View Route Details"):
                 for step in route['steps']:
                     st.write(f"**{step['travel_mode']}** - {step['duration']}")
@@ -622,13 +781,19 @@ def compare_transportation_options(
                         st.write(f"  Line: {step['transit']['line']}")
                         st.write(f"  From: {step['transit']['departure_stop']}")
                         st.write(f"  To: {step['transit']['arrival_stop']}")
-            # Show nearest shuttle/transit stops (approximate)
-            # If using presets, use their coordinates; else attempt geocoding
+
+            # --- Show nearest shuttle stops for reference ---
             origin_coords = None
             dest_coords = None
             if origin in CMU_LOCATIONS and destination in CMU_LOCATIONS:
-                origin_coords = (CMU_LOCATIONS[origin]['lat'], CMU_LOCATIONS[origin]['lon'])
-                dest_coords = (CMU_LOCATIONS[destination]['lat'], CMU_LOCATIONS[destination]['lon'])
+                origin_coords = (
+                    CMU_LOCATIONS[origin]['lat'],
+                    CMU_LOCATIONS[origin]['lon']
+                )
+                dest_coords = (
+                    CMU_LOCATIONS[destination]['lat'],
+                    CMU_LOCATIONS[destination]['lon']
+                )
             else:
                 origin_coords = geocode_address(origin, google_api_key)
                 dest_coords = geocode_address(destination, google_api_key)
@@ -636,15 +801,21 @@ def compare_transportation_options(
             if origin_coords:
                 nearest_origin = min(
                     SHUTTLE_STOPS,
-                    key=lambda s: haversine_miles(origin_coords[0], origin_coords[1], s['lat'], s['lon'])
+                    key=lambda s: haversine_miles(
+                        origin_coords[0], origin_coords[1], s['lat'], s['lon']
+                    ),
                 )
                 st.caption(f"Nearest shuttle stop from origin: {nearest_origin['name']}")
+
             if dest_coords:
                 nearest_dest = min(
                     SHUTTLE_STOPS,
-                    key=lambda s: haversine_miles(dest_coords[0], dest_coords[1], s['lat'], s['lon'])
+                    key=lambda s: haversine_miles(
+                        dest_coords[0], dest_coords[1], s['lat'], s['lon']
+                    ),
                 )
                 st.caption(f"Nearest shuttle stop to destination: {nearest_dest['name']}")
+
         elif transit_error_message:
             st.error("Transit data error: " + transit_error_message)
             with st.expander("Troubleshoot Google Maps API"):
@@ -652,12 +823,17 @@ def compare_transportation_options(
                 st.markdown("- Verify billing is active on the project")
                 st.markdown("- Temporarily set key restrictions to None while testing")
                 st.markdown("- Confirm the key in config.py or UI matches your Google Console key")
+
         else:
             st.warning("Transit data unavailable")
-        
+
         if used_transit_live:
             st.caption("Live Google Maps transit data")
+        elif used_transit_mock:
+            st.info("Using mock Public Transit data (no Google Maps API key provided)")
+
         st.markdown('</div>', unsafe_allow_html=True)
+
     
     # Uber
     with col3:
@@ -820,8 +996,31 @@ def main():
     initialize_session_state()
     display_header()
     
+    import base64
+
+    # --- Load and encode your local logo file ---
+    with open("cmu_logo.png", "rb") as image_file:
+        encoded_logo = base64.b64encode(image_file.read()).decode()
     # Sidebar
     with st.sidebar:
+        with st.sidebar:
+    # Logo at the top
+            st.markdown(
+    f"""
+    <div style="
+        background-color: #2E2E2E;
+        padding: 0;
+        margin: 0;
+        text-align: center;
+    ">
+        <img src="data:image/png;base64,{encoded_logo}"
+             style="width:100%; height:auto; display:block; border:none; border-radius:0;">
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
+    
         st.markdown("## 🎓 CMU Transport")
         st.markdown("*Transportation Comparison Tool*")
         st.markdown("---")
@@ -860,15 +1059,16 @@ def main():
         display_about()
     
     # Footer
-    st.markdown("---")
     st.markdown("""
-    <div style='text-align: center; color: #666; padding: 1rem;'>
-        <small>
-        CMU Transportation Comparison Tool | Data updated in real-time<br>
-        Not affiliated with CMU Transportation Services - For informational purposes only
-        </small>
-    </div>
-    """, unsafe_allow_html=True)
+        <hr style="margin-top:2rem;">
+        <div style='text-align:center;color:#666;padding:1rem 0;'>
+            <small>
+                © 2025 CMU Transportation Comparison Tool — Made with ❤️ by CMU Students<br>
+                Not officially affiliated with CMU Transportation Services
+            </small>
+        </div>
+        """, unsafe_allow_html=True)
+
 
 
 if __name__ == "__main__":
