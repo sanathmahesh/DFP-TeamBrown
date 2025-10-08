@@ -117,6 +117,7 @@ def get_walking_minutes_via_google(
     destination: Tuple[float, float],
     api_key: Optional[str],
 ) -> Optional[int]:
+    """Get walking time using Google Directions API."""
     if not api_key:
         return None
     try:
@@ -129,7 +130,31 @@ def get_walking_minutes_via_google(
             return None
         leg = directions[0]["legs"][0]
         return int(round(leg["duration"]["value"] / 60))
-    except Exception:
+    except Exception as e:
+        print(f"Google walking directions failed: {e}")
+        return None
+
+
+def get_driving_minutes_via_google(
+    origin: Tuple[float, float],
+    destination: Tuple[float, float],
+    api_key: Optional[str],
+) -> Optional[int]:
+    """Get driving time using Google Directions API (for shuttle route estimation)."""
+    if not api_key:
+        return None
+    try:
+        googlemaps = importlib.import_module("googlemaps")
+        client = googlemaps.Client(key=api_key)
+        directions = client.directions(
+            origin, destination, mode="driving", departure_time=datetime.now()
+        )
+        if not directions:
+            return None
+        leg = directions[0]["legs"][0]
+        return int(round(leg["duration"]["value"] / 60))
+    except Exception as e:
+        print(f"Google driving directions failed: {e}")
         return None
 
 
@@ -245,24 +270,40 @@ def plan_shuttle_trip(
             "route_name": route.name,
         }
 
+    # Track whether Google API is being used
+    uses_google_api = False
+    
     # Estimate walking minutes using Google if available, fallback to heuristic
     walk_to_stop_min = get_walking_minutes_via_google(
         origin_coords, (o_stop.lat, o_stop.lon), google_api_key
     )
-    if walk_to_stop_min is None:
+    if walk_to_stop_min is not None:
+        uses_google_api = True
+    else:
         walk_to_stop_min = walking_minutes_heuristic(o_stop_dist)
 
     walk_from_stop_min = get_walking_minutes_via_google(
         (d_stop.lat, d_stop.lon), dest_coords, google_api_key
     )
-    if walk_from_stop_min is None:
+    if walk_from_stop_min is not None:
+        uses_google_api = True
+    else:
         walk_from_stop_min = walking_minutes_heuristic(d_stop_dist)
 
     # Wait time approximation: half headway on average
     wait_min = max(1, hw // 2)
 
+    # Try to get more accurate in-vehicle time using Google API
     in_vehicle_miles = distance_along_route(route, o_stop, d_stop)
-    in_vehicle_min = estimate_in_vehicle_minutes(in_vehicle_miles)
+    in_vehicle_min = get_driving_minutes_via_google(
+        (o_stop.lat, o_stop.lon), (d_stop.lat, d_stop.lon), google_api_key
+    )
+    if in_vehicle_min is not None:
+        uses_google_api = True
+        # Adjust for shuttle vs car speed (shuttles are typically slower)
+        in_vehicle_min = int(in_vehicle_min * 1.2)  # 20% slower than car
+    else:
+        in_vehicle_min = estimate_in_vehicle_minutes(in_vehicle_miles)
 
     total_min = walk_to_stop_min + wait_min + in_vehicle_min + walk_from_stop_min
 
@@ -320,6 +361,7 @@ def plan_shuttle_trip(
             "board_time": fmt(board_time),
             "arrival_time": fmt(arrive_time),
         },
+        "uses_google_api": uses_google_api,
     }
 
 

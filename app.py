@@ -4,13 +4,13 @@ A Streamlit web application for comparing shuttle, public transit, and ride-shar
 """
 
 import streamlit as st
-import pandas as pd
 from datetime import datetime, timedelta
 import sys
 import os
 from typing import Optional, Tuple
 import importlib
 import math
+
 
 try:
     # Load environment variables from a .env file if present
@@ -29,11 +29,12 @@ except Exception:
 # Add src directory to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
-from scraper import CMUShuttleScraper
-from google_transit import GoogleTransitAPI, get_mock_transit_data
-from uber_api import UberAPI, get_mock_uber_estimates
-from shuttle_routing import plan_shuttle_trip
-from utils import (
+from src.scraper import CMUShuttleScraper
+from src.google_transit import GoogleTransitAPI, get_mock_transit_data
+from src.uber_api import UberAPI, get_mock_uber_estimates
+from src.shuttle_routing import plan_shuttle_trip
+from src.pogoh_bikes import POGOHBikesAPI, get_mock_pogoh_data
+from src.utils import (
     get_day_of_week, 
     format_duration, 
     calculate_cost_savings,
@@ -231,7 +232,27 @@ def geocode_address(address: str, api_key: Optional[str]) -> Optional[Tuple[floa
         if result and 'geometry' in result[0]:
             loc = result[0]['geometry']['location']
             return float(loc['lat']), float(loc['lng'])
-    except Exception:
+    except Exception as e:
+        print(f"Geocoding failed: {e}")
+        return None
+    return None
+
+
+def geocode_address_with_places(address: str, api_key: Optional[str]) -> Optional[Tuple[float, float]]:
+    """Try to geocode using Google Places API as fallback."""
+    if not api_key or not address:
+        return None
+    try:
+        googlemaps = importlib.import_module('googlemaps')
+        client = googlemaps.Client(key=api_key)
+        # Try Places API text search
+        places_result = client.places(query=address, location=(40.4433, -79.9436), radius=50000)
+        if places_result.get('results'):
+            place = places_result['results'][0]
+            loc = place['geometry']['location']
+            return float(loc['lat']), float(loc['lng'])
+    except Exception as e:
+        print(f"Places API geocoding failed: {e}")
         return None
     return None
 
@@ -455,6 +476,11 @@ def display_comparison_tool():
     with st.expander("⚙️ API Configuration (Optional)"):
         st.markdown("""
         Enter your API keys to get real-time data. If left empty, mock data will be used for demonstration.
+        
+        **Google Maps API Requirements:**
+        - For Public Transit: Directions API
+        - For POGOH Bikes with custom addresses: Geocoding API + Directions API
+        - For POGOH Bikes with preset locations: Directions API only
         """)
         google_api_key = st.text_input("Google Maps API Key", type="password")
         uber_token = st.text_input("Uber API Token", type="password")
@@ -494,8 +520,8 @@ def compare_transportation_options(
     st.markdown("---")
     st.subheader("📊 Comparison Results")
     
-    # Create three columns for results
-    col1, col2, col3 = st.columns(3)
+    # Create four columns for results
+    col1, col2, col3, col4 = st.columns(4)
     
     # CMU Shuttle
     with col1:
@@ -547,6 +573,16 @@ def compare_transportation_options(
                 totals = plan['totals']
                 shuttle_total_minutes = totals.get('minutes')
                 st.metric("Estimated Total Time", f"{shuttle_total_minutes} mins")
+                
+                # Show if using Google API
+                if plan.get('uses_google_api'):
+                    st.caption("📍 Using Google Maps for accurate routing")
+                else:
+                    if google_api_key:
+                        st.caption("📍 Using estimated times (Directions API not available)")
+                    else:
+                        st.caption("📍 Using estimated times (Google API not available)")
+                
                 with st.expander(f"Shuttle plan: {plan['route_name']}"):
                     st.write(f"Origin stop: {plan['origin_stop']}")
                     st.write(f"Destination stop: {plan['dest_stop']}")
@@ -701,6 +737,109 @@ def compare_transportation_options(
             st.info("Using mock Uber data (no valid Uber API token)")
         st.markdown('</div>', unsafe_allow_html=True)
     
+    # POGOH Bikes
+    with col4:
+        st.markdown("### 🚴 POGOH Bikes")
+        st.markdown('<div class="route-card">', unsafe_allow_html=True)
+        
+        # Initialize POGOH API with Google API key
+        try:
+            pogoh_api = POGOHBikesAPI(google_api_key=google_api_key)
+            pogoh_data = None
+            
+            # Try to find a real route if we have coordinates
+            if origin in CMU_LOCATIONS and destination in CMU_LOCATIONS:
+                origin_coords = CMU_LOCATIONS[origin]
+                dest_coords = CMU_LOCATIONS[destination]
+                pogoh_data = pogoh_api.find_route_between_stations(
+                    origin_coords['lat'], origin_coords['lon'],
+                    dest_coords['lat'], dest_coords['lon']
+                )
+            else:
+                # For custom addresses, try to geocode and use real API
+                o_coords = geocode_address(origin if isinstance(origin, str) else str(origin), google_api_key)
+                d_coords = geocode_address(destination if isinstance(destination, str) else str(destination), google_api_key)
+                
+                # If geocoding fails, try Places API as fallback
+                if not o_coords:
+                    o_coords = geocode_address_with_places(origin if isinstance(origin, str) else str(origin), google_api_key)
+                if not d_coords:
+                    d_coords = geocode_address_with_places(destination if isinstance(destination, str) else str(destination), google_api_key)
+                
+                if o_coords and d_coords:
+                    pogoh_data = pogoh_api.find_route_between_stations(
+                        o_coords[0], o_coords[1],
+                        d_coords[0], d_coords[1]
+                    )
+                else:
+                    # If all geocoding fails, use mock data
+                    pogoh_data = get_mock_pogoh_data(
+                        origin if isinstance(origin, str) else str(origin),
+                        destination if isinstance(destination, str) else str(destination)
+                    )
+                    # Don't show Google API as available if we're using mock data
+                    if pogoh_data and pogoh_data.get('success'):
+                        pogoh_data['uses_google_api'] = False
+            
+            if pogoh_data and pogoh_data.get('success'):
+                st.metric("Cost", pogoh_data['cost'])
+                st.metric("Travel Time", f"{pogoh_data['total_time_minutes']} mins")
+                st.metric("Bike Distance", f"{pogoh_data['bike_ride']['distance_miles']} mi")
+                
+                # Show if using Google API
+                if pogoh_data.get('uses_google_api'):
+                    st.caption("📍 Using Google Maps for accurate routing")
+                else:
+                    if google_api_key:
+                        st.caption("📍 Using estimated times (Geocoding API not available)")
+                    else:
+                        st.caption("📍 Using estimated times (Google API not available)")
+                
+                with st.expander("View Route Details"):
+                    st.write(f"**Origin Station:** {pogoh_data['origin_station']['name']}")
+                    st.write(f"Walk to station: {pogoh_data['origin_station']['walk_time_minutes']} mins")
+                    st.write(f"**Destination Station:** {pogoh_data['destination_station']['name']}")
+                    st.write(f"Walk from station: {pogoh_data['destination_station']['walk_time_minutes']} mins")
+                    st.write(f"**Bike Ride:** {pogoh_data['bike_ride']['time_minutes']} mins")
+                
+                st.success("✅ Available")
+                st.markdown("**Benefits:**")
+                st.markdown("- Eco-friendly transportation")
+                st.markdown("- Good for short-medium distances")
+                st.markdown("- Exercise while commuting")
+            elif pogoh_data and not pogoh_data.get('success'):
+                # Handle specific error cases
+                error_type = pogoh_data.get('error')
+                if error_type == 'no_origin_station':
+                    st.warning("🚫 No POGOH stations near origin")
+                    st.caption(pogoh_data.get('message', 'No stations available'))
+                    if pogoh_data.get('nearest_origin_station'):
+                        st.caption(f"Nearest station: {pogoh_data['nearest_origin_station']} ({pogoh_data['nearest_origin_distance']} miles away)")
+                elif error_type == 'no_destination_station':
+                    st.warning("🚫 No POGOH stations near destination")
+                    st.caption(pogoh_data.get('message', 'No stations available'))
+                    if pogoh_data.get('nearest_dest_station'):
+                        st.caption(f"Nearest station: {pogoh_data['nearest_dest_station']} ({pogoh_data['nearest_dest_distance']} miles away)")
+                else:
+                    st.warning("POGOH bike route unavailable")
+                    st.caption(pogoh_data.get('message', 'Unable to find suitable route'))
+            else:
+                st.warning("POGOH bike route unavailable")
+                
+        except Exception as e:
+            st.error(f"Error loading POGOH data: {str(e)}")
+            # Fallback to mock data
+            pogoh_data = get_mock_pogoh_data(
+                origin if isinstance(origin, str) else str(origin),
+                destination if isinstance(destination, str) else str(destination)
+            )
+            if pogoh_data and pogoh_data.get('success'):
+                st.metric("Cost", pogoh_data['cost'])
+                st.metric("Travel Time", f"{pogoh_data['total_time_minutes']} mins")
+                st.info("Using mock POGOH data")
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+    
     # Summary comparison
     st.markdown("---")
     st.subheader("💡 Summary & Recommendations")
@@ -739,6 +878,15 @@ def compare_transportation_options(
                 fastest_label = 'Uber'
                 fastest_time = uber_best_seconds
 
+    # POGOH time
+    pogoh_time_seconds = None
+    if 'pogoh_data' in locals() and pogoh_data and pogoh_data.get('success'):
+        pogoh_time_seconds = pogoh_data['total_time_minutes'] * 60
+        details.append(("POGOH Bikes", pogoh_time_seconds))
+        if fastest_time is None or pogoh_time_seconds < fastest_time:
+            fastest_label = 'POGOH Bikes'
+            fastest_time = pogoh_time_seconds
+
     # Build summary UI
     col1, col2 = st.columns(2)
     with col1:
@@ -747,7 +895,7 @@ def compare_transportation_options(
         <div class=\"success-box\"> 
         <strong>💰 Best Value:</strong> CMU Shuttle (Free!)<br>
         <strong>⚡ Fastest:</strong> {fastest_text}<br>
-        <strong>🌱 Most Sustainable:</strong> Public Transit / Shuttle
+        <strong>🌱 Most Sustainable:</strong> POGOH Bikes / Public Transit / Shuttle
         </div>
         """, unsafe_allow_html=True)
 
@@ -770,6 +918,7 @@ def compare_transportation_options(
             st.markdown(f"- Best CMU Shuttle: **{shuttle_rec}** — {shuttle_note}")
         else:
             st.markdown(f"- {shuttle_note}")
+        st.markdown("- POGOH Bikes for eco-friendly short-medium trips")
         st.markdown("- Public Transit for cost-effective trips")
         st.markdown("- Uber for urgency or off-peak hours")
 
@@ -788,6 +937,7 @@ def display_about():
     - 📅 **Live Shuttle Schedules**: Real-time CMU shuttle timings scraped from official sources
     - 🚍 **Public Transit Comparison**: Compare with Port Authority bus/transit options
     - 🚗 **Ride-sharing Estimates**: Get Uber pricing and timing estimates
+    - 🚴 **POGOH Bike Integration**: Find bike-share stations and plan bike routes
     - 💰 **Cost Analysis**: See how much you can save with different options
     - ⏱️ **Time Comparison**: Find the fastest route for your journey
     
@@ -795,6 +945,7 @@ def display_about():
     - CMU Shuttle schedules: [CMU Transportation Services](https://www.cmu.edu/transportation/transport/shuttle.html)
     - Public transit: Google Maps API
     - Ride-sharing: Uber API
+    - POGOH Bike stations: [POGOH Dataset](POGOH Dataset.csv)
     
     #### How to Use:
     1. Check shuttle schedules in the **Shuttle Schedules** tab
