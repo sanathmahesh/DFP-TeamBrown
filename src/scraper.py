@@ -65,15 +65,22 @@ class CMUShuttleScraper:
             for elem in self.soup.find_all(['strong', 'b', 'p']):
                 text = elem.get_text(strip=True)
                 if route_desc in text or route_name in text:
-                    # Get the next paragraph or text that might contain the path
-                    next_elem = elem.find_next(['p', 'div'])
-                    if next_elem:
-                        path_text = next_elem.get_text(strip=True)
-                        if '>' in path_text:  # Route paths contain '>' separators
-                            route_info['path'] = path_text
+                    if '>' in text:  # Route paths contain '>' separators
+                            route_info['path'] = text
                             route_info['description'] = route_desc
                             routes[route_name] = route_info
                             break
+                    else:
+                        # Get the next paragraph or text that might contain the path
+                        next_elem = elem.find_next(['p', 'div'])
+                        if next_elem:
+                            path_text = next_elem.get_text(strip=True)
+                            if '>' in path_text:  # Route paths contain '>' separators
+                                route_info['path'] = path_text
+                                route_info['description'] = route_desc
+                                routes[route_name] = route_info
+                                break
+                    
         
         return routes
     
@@ -207,6 +214,10 @@ def test_scraper():
         print(f"\nFound {len(data['routes'])} routes:")
         for route_name in data['routes'].keys():
             print(f"  - {route_name}")
+            if 'info' in data['routes'][route_name]:
+                print(f"    Info: {data['routes'][route_name]['info']}")
+            if 'path' in data['routes'][route_name]:
+                print(f"    Path: {data['routes'][route_name]['path']}")
         
         print(f"\nFound {len(data['schedules'])} schedule tables:")
         for schedule_name, df in data['schedules'].items():
