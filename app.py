@@ -11,6 +11,7 @@ from typing import Optional, Tuple
 import importlib
 import math
 import pydeck as pdk
+import pandas as pd
 
 
 try:
