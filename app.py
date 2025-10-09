@@ -381,6 +381,46 @@ def geocode_address_with_places(address: str, api_key: Optional[str]) -> Optiona
     return None
 
 
+def normalize_schedule_df(data) -> pd.DataFrame:
+    """Ensure schedule data is a pandas DataFrame.
+
+    If the data is a list-of-lists or has the first row as header values,
+    promote the first row to column names.
+    """
+    # If already a DataFrame, return as-is
+    if not isinstance(data, pd.DataFrame):
+        # return data
+
+        # Try to coerce to DataFrame
+        try:
+            df = pd.DataFrame(data)
+        except Exception:
+            # Fallback: empty DataFrame
+            # return pd.DataFrame()
+            return data
+    else:
+        df = data
+
+    # print(df.columns)
+
+    # If columns are generic integers (0..n) and first row looks like header labels (strings), promote it
+    if df.shape[0] >= 1:
+        # Check if column names are numeric-like
+        cols_are_default = all(isinstance(c, int) or (isinstance(c, str) and c.isdigit()) for c in df.columns)
+        
+        first_row = df.iloc[0].astype(str).tolist()
+        # Heuristic: if a majority of first row values are non-empty strings and not equal to 'nan'
+        nonempty = sum(1 for v in first_row if v and v.lower() != 'nan')
+        if cols_are_default and nonempty >= max(1, len(first_row) // 2):
+            new_cols = [str(x).strip() for x in first_row]
+            df = df[1:].copy()
+            df.columns = new_cols
+            # print(new_cols)
+            df.reset_index(drop=True, inplace=True)
+
+    return df
+
+
 def get_nearest_shuttle_stop(lat: float, lon: float) -> Tuple[dict, float]:
     """Return nearest shuttle stop and distance (miles) for given coords."""
     nearest = min(
@@ -451,74 +491,114 @@ def display_shuttle_schedules():
     if st.session_state.shuttle_data and st.session_state.shuttle_data['success']:
         data = st.session_state.shuttle_data
         
-        # Display last update time
-        if st.session_state.last_fetch:
-            st.caption(f"Last updated: {st.session_state.last_fetch.strftime('%I:%M %p')}")
-        
-        # Current day info
+        # Compact header row: Today • Last updated • Routes
         current_day = get_day_of_week()
         day_type = get_current_day_type()
-        
-        st.markdown(f"""
-        <div class="info-box">
-            <strong>Today:</strong> {current_day} ({day_type.title()})
-        </div>
-        """, unsafe_allow_html=True)
-        
-        # Display routes
-        st.subheader("🗺️ Available Routes")
         routes = data.get('routes', {})
-        
-        if routes:
-            for route_name, route_info in routes.items():
-                with st.expander(f"📍 {route_name}"):
-                    if 'description' in route_info:
-                        st.write(f"**Description:** {route_info['description']}")
-                    if 'path' in route_info:
-                        st.write(f"**Route Path:**")
-                        st.code(route_info['path'], language=None)
-        else:
-            st.info("Route information will be displayed here once available.")
-        
-        # Display schedules
-        st.subheader("⏰ Schedule Tables")
+
+        info_col1, info_col2, info_col3 = st.columns([1,1,1])
+        with info_col1:
+            st.markdown(f"**Today:** {current_day} ({day_type.title()})")
+        with info_col2:
+            if st.session_state.last_fetch:
+                st.markdown(f"**Last updated:** {st.session_state.last_fetch.strftime('%I:%M %p')}")
+            else:
+                st.markdown("**Last updated:** —")
+        with info_col3:
+            st.markdown(f"**Routes:** {len(routes) if routes else 0} routes available")
+
+        # Small heading for schedule tables
+        st.markdown("### ⏰ Schedule Tables")
         schedules = data.get('schedules', {})
-        
+
         if schedules:
-            # Organize schedules by type
+            # Build a mapping that preserves original route names and metadata for display
+            routes_map = {}
+            if routes:
+                for rname, rinfo in routes.items():
+                    routes_map[rname.lower()] = {
+                        'original_name': rname,
+                        'info': rinfo
+                    }
+
+            # Organize schedules by type and show matched available routes above each tab
             schedule_tabs = st.tabs(["A/B/AB Routes", "C Route", "PTC & Mill 19", "Bakery Square"])
-            
+
             with schedule_tabs[0]:
                 st.markdown("### A, B, and AB Routes (Shadyside)")
+
+                # Show matched routes above schedule
+                for route_name, route_info in routes.items():
+                    if any(sub in route_name.lower() for sub in ['a route', 'b route', 'ab route']):
+                        with st.expander(f"📍 {route_name}"):
+                            if 'description' in route_info:
+                                st.write(f"**Description:** {route_info['description']}")
+                            if 'path' in route_info:
+                                st.write(f"**Route Path:**")
+                                st.code(route_info['path'], language=None)
+
                 if 'A_B_AB_Routes_Weekday' in schedules:
                     st.write("**Monday - Friday:**")
-                    st.data_editor(schedules['A_B_AB_Routes_Weekday'], use_container_width=True)
+                    st.data_editor(normalize_schedule_df(schedules['A_B_AB_Routes_Weekday']), use_container_width=True)
                 if 'A_B_AB_Routes_Weekend' in schedules:
                     st.write("**Saturday & Sunday:**")
-                    st.data_editor(schedules['A_B_AB_Routes_Weekend'], use_container_width=True)
-            
+                    st.data_editor(normalize_schedule_df(schedules['A_B_AB_Routes_Weekend']), use_container_width=True)
+
             with schedule_tabs[1]:
                 st.markdown("### C Route (Squirrel Hill)")
+
+                # Show matched routes above schedule
+                for route_name, route_info in routes.items():
+                    if any(sub in route_name.lower() for sub in ['c route']) and 'ptc' not in route_name.lower():
+                        with st.expander(f"📍 {route_name}"):
+                            if 'description' in route_info:
+                                st.write(f"**Description:** {route_info['description']}")
+                            if 'path' in route_info:
+                                st.write(f"**Route Path:**")
+                                st.code(route_info['path'], language=None)
+
                 if 'C_Route_Weekday' in schedules:
                     st.write("**Monday - Friday:**")
-                    st.data_editor(schedules['C_Route_Weekday'], use_container_width=True)
+                    st.data_editor(normalize_schedule_df(schedules['C_Route_Weekday']), use_container_width=True)
                 else:
                     st.info("No weekend service for C Route")
-            
+
             with schedule_tabs[2]:
                 st.markdown("### PTC & Mill 19 Routes")
+
+                # Show matched routes above schedule
+                for route_name, route_info in routes.items():
+                    if any(sub in route_name.lower() for sub in ['ptc', 'mill 19', 'mill19', 'ptc & mill', 'ptc & mill 19']):
+                        with st.expander(f"📍 {route_name}"):
+                            if 'description' in route_info:
+                                st.write(f"**Description:** {route_info['description']}")
+                            if 'path' in route_info:
+                                st.write(f"**Route Path:**")
+                                st.code(route_info['path'], language=None)
+
                 if 'PTC_Mill19_Weekday' in schedules:
                     st.write("**Monday - Friday:**")
-                    st.data_editor(schedules['PTC_Mill19_Weekday'], use_container_width=True)
+                    st.data_editor(normalize_schedule_df(schedules['PTC_Mill19_Weekday']), use_container_width=True)
                 if 'PTC_Mill19_Weekend' in schedules:
                     st.write("**Saturday & Sunday:**")
-                    st.data_editor(schedules['PTC_Mill19_Weekend'], use_container_width=True)
-            
+                    st.data_editor(normalize_schedule_df(schedules['PTC_Mill19_Weekend']), use_container_width=True)
+
             with schedule_tabs[3]:
                 st.markdown("### Bakery Square Routes")
+
+                # Show matched routes above schedule
+                for route_name, route_info in routes.items():
+                    if any(sub in route_name.lower() for sub in ['bakery', 'bakery square', 'bakery square (']):
+                        with st.expander(f"📍 {route_name}"):
+                            if 'description' in route_info:
+                                st.write(f"**Description:** {route_info['description']}")
+                            if 'path' in route_info:
+                                st.write(f"**Route Path:**")
+                                st.code(route_info['path'], language=None)
+                                
                 if 'Bakery_Square_Weekday' in schedules:
                     st.write("**Monday - Friday:**")
-                    st.data_editor(schedules['Bakery_Square_Weekday'], use_container_width=True)
+                    st.data_editor(normalize_schedule_df(schedules['Bakery_Square_Weekday']), use_container_width=True)
                 else:
                     st.info("Bakery Square route operates Monday-Friday only")
         
