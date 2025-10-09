@@ -49,7 +49,7 @@ config.py
 htmlcov/
 
 # Streamlit
-.streamlit/
+# .streamlit/
 
 # Data files
 data/*.csv
