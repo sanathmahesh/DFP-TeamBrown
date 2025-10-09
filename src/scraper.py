@@ -127,7 +127,34 @@ class CMUShuttleScraper:
                             route_name = 'PTC_Mill19_Weekday'
                     elif 'Bakery Square' in heading_text:
                         route_name = 'Bakery_Square_Weekday'
-                
+                    
+                    else:
+                        prev_heading = prev_heading.find_previous(['h1', 'h2', 'h3', 'h4', 'strong', 'p'])
+
+                        if prev_heading:
+                            heading_text = prev_heading.get_text(strip=True)
+                            
+                            # Identify the route type based on heading
+                            if 'A, B and AB Routes' in heading_text:
+                                if 'Monday - Friday' in heading_text or 'Monday-Friday' in heading_text:
+                                    route_name = 'A_B_AB_Routes_Weekday'
+                                elif 'Saturday & Sunday' in heading_text:
+                                    route_name = 'A_B_AB_Routes_Weekend'
+                            elif 'C Route' in heading_text:
+                                route_name = 'C_Route_Weekday'
+                            elif 'PTC / Mill 19' in heading_text or 'PTC/Mill 19' in heading_text:
+                                if 'Saturday & Sunday' in heading_text:
+                                    route_name = 'PTC_Mill19_Weekend'
+                                else:
+                                    route_name = 'PTC_Mill19_Weekday'
+                            elif 'Bakery Square' in heading_text:
+                                route_name = 'Bakery_Square_Weekday'
+                            else:
+                                first_row = df.iloc[0].astype(str).tolist()
+                                new_cols = [str(x).strip() for x in first_row]
+                                if 'Bakery Square' in new_cols:
+                                    route_name = 'Bakery_Square_Weekday'
+
                 schedules[route_name] = df
                 
             except Exception as e:
