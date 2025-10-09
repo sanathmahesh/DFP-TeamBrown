@@ -1235,35 +1235,33 @@ def main():
         encoded_logo = base64.b64encode(image_file.read()).decode()
     # Sidebar
     with st.sidebar:
-        with st.sidebar:
-    # Logo at the top
-            st.markdown(
-    f"""
-    <div style="
-        background-color: #2E2E2E;
-        padding: 0;
-        margin: 0;
-        text-align: center;
-    ">
-        <img src="data:image/png;base64,{encoded_logo}"
-             style="width:100%; height:auto; display:block; border:none; border-radius:0;">
-    </div>
-    """,
-    unsafe_allow_html=True
-)
+        # Logo at the top
+        st.markdown(
+            f"""
+            <div style="
+                background-color: #2E2E2E;
+                padding: 0;
+                margin: 0;
+                text-align: center;
+            ">
+                <img src="data:image/png;base64,{encoded_logo}"
+                     style="width:100%; height:auto; display:block; border:none; border-radius:0;">
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
 
-    
-        st.markdown("## 🎓 CMU Transport")
+        st.markdown('<div style="color:#C41230 !important;margin:0 0 0.25rem;font-size:1.25rem;font-weight:700;">🎓 CMU Transport</div>', unsafe_allow_html=True)
         st.markdown("*Transportation Comparison Tool*")
         st.markdown("---")
-        
+
         st.markdown("### 🎯 Quick Links")
         st.markdown("""
         - [TripShot Bus Tracker](https://cmu.tripshot.com)
         - [CMU Transportation](https://www.cmu.edu/transportation/)
         - [Port Authority](https://www.portauthority.org/)
         """)
-        
+
         st.markdown("---")
         st.markdown("### 📞 Contact")
         st.markdown("""
@@ -1271,7 +1269,7 @@ def main():
         📧 transportation@andrew.cmu.edu  
         📞 (412) 268-2052
         """)
-        
+
         st.markdown("---")
         current_time = datetime.now().strftime("%I:%M %p")
         current_day = get_day_of_week()
