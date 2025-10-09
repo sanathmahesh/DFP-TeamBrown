@@ -65,15 +65,22 @@ class CMUShuttleScraper:
             for elem in self.soup.find_all(['strong', 'b', 'p']):
                 text = elem.get_text(strip=True)
                 if route_desc in text or route_name in text:
-                    # Get the next paragraph or text that might contain the path
-                    next_elem = elem.find_next(['p', 'div'])
-                    if next_elem:
-                        path_text = next_elem.get_text(strip=True)
-                        if '>' in path_text:  # Route paths contain '>' separators
-                            route_info['path'] = path_text
+                    if '>' in text:  # Route paths contain '>' separators
+                            route_info['path'] = text
                             route_info['description'] = route_desc
                             routes[route_name] = route_info
                             break
+                    else:
+                        # Get the next paragraph or text that might contain the path
+                        next_elem = elem.find_next(['p', 'div'])
+                        if next_elem:
+                            path_text = next_elem.get_text(strip=True)
+                            if '>' in path_text:  # Route paths contain '>' separators
+                                route_info['path'] = path_text
+                                route_info['description'] = route_desc
+                                routes[route_name] = route_info
+                                break
+                    
         
         return routes
     
@@ -120,7 +127,34 @@ class CMUShuttleScraper:
                             route_name = 'PTC_Mill19_Weekday'
                     elif 'Bakery Square' in heading_text:
                         route_name = 'Bakery_Square_Weekday'
-                
+                    
+                    else:
+                        prev_heading = prev_heading.find_previous(['h1', 'h2', 'h3', 'h4', 'strong', 'p'])
+
+                        if prev_heading:
+                            heading_text = prev_heading.get_text(strip=True)
+                            
+                            # Identify the route type based on heading
+                            if 'A, B and AB Routes' in heading_text:
+                                if 'Monday - Friday' in heading_text or 'Monday-Friday' in heading_text:
+                                    route_name = 'A_B_AB_Routes_Weekday'
+                                elif 'Saturday & Sunday' in heading_text:
+                                    route_name = 'A_B_AB_Routes_Weekend'
+                            elif 'C Route' in heading_text:
+                                route_name = 'C_Route_Weekday'
+                            elif 'PTC / Mill 19' in heading_text or 'PTC/Mill 19' in heading_text:
+                                if 'Saturday & Sunday' in heading_text:
+                                    route_name = 'PTC_Mill19_Weekend'
+                                else:
+                                    route_name = 'PTC_Mill19_Weekday'
+                            elif 'Bakery Square' in heading_text:
+                                route_name = 'Bakery_Square_Weekday'
+                            else:
+                                first_row = df.iloc[0].astype(str).tolist()
+                                new_cols = [str(x).strip() for x in first_row]
+                                if 'Bakery Square' in new_cols:
+                                    route_name = 'Bakery_Square_Weekday'
+
                 schedules[route_name] = df
                 
             except Exception as e:
@@ -207,6 +241,10 @@ def test_scraper():
         print(f"\nFound {len(data['routes'])} routes:")
         for route_name in data['routes'].keys():
             print(f"  - {route_name}")
+            if 'info' in data['routes'][route_name]:
+                print(f"    Info: {data['routes'][route_name]['info']}")
+            if 'path' in data['routes'][route_name]:
+                print(f"    Path: {data['routes'][route_name]['path']}")
         
         print(f"\nFound {len(data['schedules'])} schedule tables:")
         for schedule_name, df in data['schedules'].items():
