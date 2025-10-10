@@ -31,7 +31,8 @@ A Python-based web application built with Streamlit that helps Carnegie Mellon U
    ```
 
 2. **Create a virtual environment** (recommended)
-    Note: The env setup and requirements install code can be found in run.sh commented, uncomment them to execute.
+
+   Note: The env setup and requirements install code can be found in run.sh commented, uncomment them to execute.
 
    ```bash
    python -m venv venv
@@ -43,7 +44,7 @@ A Python-based web application built with Streamlit that helps Carnegie Mellon U
    venv\Scripts\activate
    ```
 
-3. **Install dependencies**
+4. **Install dependencies**
    ```bash
    pip install -r requirements.txt
    ```
