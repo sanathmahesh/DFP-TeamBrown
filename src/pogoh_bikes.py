@@ -1,7 +1,27 @@
 """
-POGOH (Pittsburgh's bike-share system) integration module.
-Handles POGOH station data and bike availability information.
-Integrates with Google Directions API for dynamic travel time estimation.
+File: pogoh_bikes.py
+Team: Team Brown  
+Course: Data Focused Python - Final Project
+Carnegie Mellon University
+
+Team Members:
+- mnagersh
+- sddabir
+- sanathk
+- rrakshan
+- ssurabhi
+
+Purpose: POGOH bike-share integration for Pittsburgh bike station data.
+         Provides bike availability and routing with mock fallback.
+         Integrates with Google Directions API for travel time estimation.
+
+Imports from: csv, math, os, importlib, typing, datetime
+Imported by: app.py (main application)  
+
+Key Functions:
+- POGOHBikesAPI: Class for bike station data processing
+- get_mock_pogoh_data(): Fallback mock data when real data unavailable
+- calculate_bike_travel_time(): Estimates cycling time between locations
 """
 
 import csv

@@ -1,12 +1,29 @@
 """
-Shuttle routing utilities: stops database, route sequences, and schedule-aware planning.
+File: shuttle_routing.py
+Team: Team Brown
+Course: Data Focused Python - Final Project
+Carnegie Mellon University
 
-This module computes a shuttle plan between two coordinates by:
-- Finding nearest origin/destination shuttle stops
-- Determining a plausible route that connects them (same route sequence)
-- Estimating wait time based on headways and operating windows by route/day
-- Estimating in-vehicle travel time based on distance along the route
-- Optionally estimating walking times to/from stops via Google Directions
+Team Members:
+- mnagersh
+- sddabir
+- sanathk
+- rrakshan
+- ssurabhi
+
+Purpose: CMU shuttle route planning and trip optimization logic.
+         Determines best shuttle routes between CMU locations.
+         Computes shuttle plans by finding nearest stops, route connections, 
+         wait times, and travel time estimates.
+
+Imports from: typing, datetime, math, os, importlib, src.utils
+Imported by: app.py (main application)
+
+Key Functions:
+- plan_shuttle_trip(): Main route planning algorithm
+- find_best_route(): Optimization logic for selecting fastest shuttle option
+- get_nearest_stop(): Finds closest shuttle stop to given coordinates
+- estimate_wait_time(): Calculates expected wait based on schedule headways
 """
 
 from __future__ import annotations

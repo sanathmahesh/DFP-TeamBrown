@@ -1,5 +1,32 @@
 """
-Utility functions for the CMU Transportation Comparison Tool.
+File: utils.py
+Team: Team Brown
+Course: Data Focused Python - Final Project
+Carnegie Mellon University
+
+Team Members:
+- mnagersh
+- sddabir
+- sanathk
+- rrakshan
+- ssurabhi
+
+Purpose: Shared utility functions and constants for the transportation app.
+         Contains helper functions for time, cost calculations, and CMU locations.
+
+Imports from: datetime, typing, re
+Imported by: app.py, src.shuttle_routing (and other modules as needed)
+
+Key Functions:
+- get_day_of_week(): Current day determination  
+- format_duration(): Time formatting utilities
+- calculate_cost_savings(): Cost comparison calculations
+- calculate_time_savings(): Time comparison calculations
+- get_current_day_type(): Weekday/weekend classification
+- parse_time_string(): Converts time strings to structured format
+
+Key Constants:
+- CMU_LOCATIONS: Dictionary of predefined CMU campus locations
 """
 
 from datetime import datetime, time

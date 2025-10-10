@@ -15,12 +15,13 @@ A Python-based web application built with Streamlit that helps Carnegie Mellon U
 - **⏱️ Time Comparison**: Find the fastest route for your journey
 - **🎨 Modern UI**: Beautiful, responsive interface built entirely in Python using Streamlit
 
-## 🚀 Quick Start
+## 🚀 How to Install and Run This Project
 
 ### Prerequisites
 
 - Python 3.8 or higher
 - pip (Python package installer)
+
 
 ### Installation
 
@@ -30,6 +31,8 @@ A Python-based web application built with Streamlit that helps Carnegie Mellon U
    ```
 
 2. **Create a virtual environment** (recommended)
+    Note: The env setup and requirements install code can be found in run.sh commented, uncomment them to execute.
+
    ```bash
    python -m venv venv
    
@@ -44,6 +47,13 @@ A Python-based web application built with Streamlit that helps Carnegie Mellon U
    ```bash
    pip install -r requirements.txt
    ```
+**Required Python packages (installed via requirements.txt):**
+- beautifulsoup4==4.12.3
+- requests==2.31.0
+- lxml==5.1.0
+- pandas==2.2.0
+- googlemaps==4.10.0
+- python-dotenv==1.0.1
 
 4. **Configure API keys** (optional - app works with mock data without keys)
    ```bash
@@ -187,6 +197,22 @@ The modular structure makes it easy to add new features:
 - [ ] Push notifications for shuttle arrivals
 - [ ] Carbon footprint comparison
 
+## 📸 Application Screenshots
+
+### Main Interface
+![Main Dashboard](screenshots/main_interface.png)
+*The main CMU Transportation Comparison Tool interface showing the three main tabs*
+
+### Shuttle Schedules Tab  
+![Shuttle Schedules](screenshots/shuttle_schedules.png)
+*Live CMU shuttle schedules with route information and timetables*
+
+### Transportation Comparison
+![Compare Options](screenshots/comparison_tool.png)
+*Side-by-side comparison of shuttle, transit, and ride-sharing options*
+
+**Note:** Screenshots show the actual application interface to help users understand the tool's functionality.
+
 ## 🤝 Contributing
 
 Contributions are welcome! Here's how you can help:
@@ -222,3 +248,10 @@ For questions or support:
 **Made with ❤️ for the CMU community**
 
 *Version 0.1.0*
+
+**Team Brown**
+- Mahir Nagersheth - mnagersh
+- Shrirang Dabir - sddabir
+- Sanath Mahesh - sanathk
+- Rakshanda Abhinandan - rrakshan
+- Surabhi Byju - ssurabhi

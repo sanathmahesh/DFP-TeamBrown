@@ -1,6 +1,25 @@
 """
-Google Maps Transit API integration.
-Module for fetching public transportation options and comparing with shuttle timings.
+File: google_transit.py
+Team: Team Brown
+Course: Data Focused Python - Final Project  
+Carnegie Mellon University
+
+Team Members:
+- mnagersh
+- sddabir
+- sanathk
+- rrakshan
+- ssurabhi
+
+Purpose: Google Maps API integration for public transit directions and timing.
+         Provides real-time transit data with mock fallback.
+
+Imports from: googlemaps, datetime, typing, os, importlib
+Imported by: app.py (main application)
+
+Key Functions:
+- GoogleTransitAPI: Class for interfacing with Google Maps Directions API
+- get_mock_transit_data(): Fallback mock data when API unavailable
 """
 
 from datetime import datetime

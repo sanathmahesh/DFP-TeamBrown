@@ -1,5 +1,27 @@
 """
-Web scraper for CMU shuttle schedule information.
+File: scraper.py
+Team: Team Brown  
+Course: Data Focused Python - Final Project
+Carnegie Mellon University
+
+Team Members:
+- mnagersh
+- sddabir
+- sanathk
+- rrakshan
+- ssurabhi
+
+Purpose: Web scraper for CMU shuttle schedule information from official CMU Transportation website.
+         Extracts route descriptions, paths, and schedule tables.
+
+Imports from: requests, beautifulsoup4, pandas, re, io
+Imported by: app.py (main application)
+
+Key Classes:
+- CMUShuttleScraper: Main scraper class with methods for extracting route info and schedules
+  * fetch_page(): Downloads HTML from CMU transportation site
+  * extract_route_info(): Parses route descriptions and paths  
+  * extract_schedule_tables(): Converts HTML tables to pandas DataFrames
 """
 
 import requests

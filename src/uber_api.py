@@ -1,6 +1,25 @@
 """
-Uber Price Estimation API.
-Module for calculating Uber ride estimates based on distance using Google Maps API.
+File: uber_api.py  
+Team: Team Brown
+Course: Data Focused Python - Final Project
+Carnegie Mellon University
+
+Team Members:
+- mnagersh
+- sddabir
+- sanathk
+- rrakshan
+- ssurabhi
+
+Purpose: Uber API integration for ride-sharing price and time estimates.
+         Provides real-time Uber data with mock fallback.
+
+Imports from: typing, os, math, datetime, importlib
+Imported by: app.py (main application)
+
+Key Functions:
+- UberAPI: Class for interfacing with Uber API
+- get_mock_uber_estimates(): Fallback mock data when API unavailable
 """
 
 from typing import Dict, Optional, List, Tuple

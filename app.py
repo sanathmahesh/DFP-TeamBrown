@@ -1,3 +1,30 @@
+# """
+# File: app.py  
+# Team: Team Brown
+# Course: Data Focused Python - Final Project
+# Carnegie Mellon University
+
+# Team Members:
+# - mnagersh
+# - sddabir
+# - sanathk
+# - rrakshan
+# - ssurabhi
+
+# Purpose: Main Streamlit web application for CMU Transportation Comparison Tool.
+#          Provides interface for comparing shuttle, transit, and ride-sharing options.
+
+# Imports from: src.scraper, src.google_transit, src.uber_api, src.shuttle_routing, 
+#               src.pogoh_bikes, src.utils, streamlit, pandas, datetime, os, sys
+# Imported by: None (main entry point)
+
+# Key Functions:
+# - main(): Application entry point with Streamlit interface
+# - display_shuttle_schedules(): Shows live CMU shuttle schedule data
+# - display_comparison_tool(): Interface for comparing transportation options
+# - compare_transportation_options(): Core comparison logic between transport modes
+# """
+
 """
 CMU Transportation Comparison Tool
 A Streamlit web application for comparing shuttle, public transit, and ride-sharing options.
