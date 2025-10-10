@@ -22,6 +22,7 @@ A Python-based web application built with Streamlit that helps Carnegie Mellon U
 - Python 3.8 or higher
 - pip (Python package installer)
 
+
 ### Installation
 
 1. **Clone the repository**
@@ -224,4 +225,8 @@ For questions or support:
 *Version 0.1.0*
 
 **Team Brown**
-- [Mahir] - 
+- Mahir Nagersheth - mnagersh
+- Shrirang Dabir - sddabir
+- Sanath Mahesh - sanathk
+- Surabhi Byju - ssurabhi
+- Rakshanda Abhinandan - rrakshan
