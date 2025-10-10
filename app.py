@@ -625,10 +625,10 @@ def display_comparison_tool():
     """, unsafe_allow_html=True)
     
     # Location selection
+    use_custom_addresses = st.checkbox("Use exact addresses", value=False)
+    
     col1, col2 = st.columns(2)
     
-    use_custom_addresses = st.checkbox("Use exact addresses", value=False)
-        
     with col1:
         if use_custom_addresses:
             origin_address = st.text_input(
@@ -686,25 +686,9 @@ def display_comparison_tool():
     with col2:
         travel_time = st.time_input("⏰ Time", datetime.now().time())
     
-    # API Configuration
-    with st.expander("⚙️ API Configuration (Optional)"):
-        st.markdown("""
-        Enter your API keys to get real-time data. If left empty, mock data will be used for demonstration.
-        
-        **Google Maps API Requirements:**
-        - For Public Transit: Directions API
-        - For POGOH Bikes with custom addresses: Geocoding API + Directions API
-        - For POGOH Bikes with preset locations: Directions API only
-        """)
-        google_api_key = st.text_input("Google Maps API Key", type="password")
-        uber_token = st.text_input("Uber API Token", type="password")
-        
-        # Show where keys will be resolved from (informational hint only)
-        resolved_google_key, resolved_uber_token = resolve_api_keys(google_api_key, uber_token)
-        if not resolved_google_key:
-            st.caption("Using mock Public Transit data (no Google Maps API key provided)")
-        if not resolved_uber_token:
-            st.caption("Using mock Uber data (no Uber API token provided)")
+    # API keys are resolved from config.py or environment variables
+    google_api_key = ""
+    uber_token = ""
     
     if st.button("🔎 Compare Options", type="primary", use_container_width=True):
         # Resolve keys again at click time to ensure latest values
@@ -951,6 +935,7 @@ def compare_transportation_options(
             st.info("Using mock Public Transit data (no Google Maps API key provided)")
 
         st.markdown('</div>', unsafe_allow_html=True)
+
     
     # Uber
     with col3:
@@ -991,7 +976,7 @@ def compare_transportation_options(
         else:
             st.warning("Uber data unavailable")
         st.markdown('</div>', unsafe_allow_html=True)
-
+    
     # POGOH Bikes
     with col4:
         st.markdown("### 🚴 POGOH Bikes")
